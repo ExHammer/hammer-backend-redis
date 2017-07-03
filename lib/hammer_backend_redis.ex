@@ -82,7 +82,7 @@ defmodule Hammer.Backend.Redis do
 
   def handle_call({:setup, config}, _from, state) do
     %{expiry: expiry} = config
-    {:reply, :ok, Map.merge(state, %{expiry: expiry})}
+    {:reply, :ok, Map.merge(state, %{expiry_seconds: expiry/1000})}
   end
 
   def handle_call({:count_hit, key, now}, _from, %{redix: r}=state) do
@@ -93,7 +93,7 @@ defmodule Hammer.Backend.Redis do
     case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
         {bucket, id} = key
-        {:ok, ["OK" | _t]} = Redix.pipeline(r, [
+        {:ok, ["OK", 1, 1, 1]} = Redix.pipeline(r, [
           [
             "HMSET", redis_key,
             "bucket", bucket,
@@ -164,8 +164,8 @@ defmodule Hammer.Backend.Redis do
   end
 
   defp get_expiry(state) do
-    %{expiry: expiry} = state
-    expiry + (1000 * 60)
+    %{expiry_seconds: expiry} = state
+    round(expiry + 1)
   end
 
 end
