@@ -81,8 +81,8 @@ defmodule Hammer.Backend.Redis do
   end
 
   def handle_call({:setup, config}, _from, state) do
-    %{expiry: expiry} = config
-    {:reply, :ok, Map.merge(state, %{expiry_seconds: expiry/1000})}
+    %{expiry_ms: expiry_ms} = config
+    {:reply, :ok, Map.merge(state, %{expiry_seconds: expiry_ms/1000})}
   end
 
   def handle_call({:count_hit, key, now}, _from, %{redix: r}=state) do
@@ -104,7 +104,7 @@ defmodule Hammer.Backend.Redis do
               "HMSET", redis_key,
               "bucket", bucket,
               "id", id,
-              "count", 0,
+              "count", 1,
               "created", now,
               "updated", now
             ],
