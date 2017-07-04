@@ -90,37 +90,49 @@ defmodule Hammer.Backend.Redis do
     expiry = get_expiry(state)
     redis_key = make_redis_key(key)
     bucket_set_key = make_bucket_set_key(id)
-    case Redix.command(r, ["EXISTS", redis_key]) do
+    current_count = case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
         {bucket, id} = key
-        {:ok, ["OK", 1, 1, 1]} = Redix.pipeline(r, [
+        {
+          :ok,
+          ["OK","QUEUED","QUEUED","QUEUED","QUEUED",["OK",1,1,1]]
+        } = Redix.pipeline(
+          r,
           [
-            "HMSET", redis_key,
-            "bucket", bucket,
-            "id", id,
-            "count", 0,
-            "created", now,
-            "updated", now
-          ],
-          [
-            "SADD", bucket_set_key, redis_key
-          ],
-          [
-            "EXPIRE", redis_key, expiry
-          ],
-          [
-            "EXPIRE", bucket_set_key, expiry
+            ["MULTI"],
+            [
+              "HMSET", redis_key,
+              "bucket", bucket,
+              "id", id,
+              "count", 0,
+              "created", now,
+              "updated", now
+            ],
+            [
+              "SADD", bucket_set_key, redis_key
+            ],
+            [
+              "EXPIRE", redis_key, expiry
+            ],
+            [
+              "EXPIRE", bucket_set_key, expiry
+            ],
+            ["EXEC"]
           ]
-         ])
-        {:reply, {:ok, 1}, state}
+        )
+        1
       {:ok, 1} ->
         # update
-        {:ok, [count, 0]} = Redix.pipeline(r, [
-          ["HINCRBY", redis_key, "count",   1],
-          ["HSET"   , redis_key, "updated", now]
-        ])
-        {:reply, {:ok, count}, state}
+        {:ok, [count, 0]} = Redix.pipeline(
+          r,
+          [
+            ["HINCRBY", redis_key, "count",   1],
+            ["HSET"   , redis_key, "updated", now]
+          ]
+        )
+        count
     end
+    {:reply, {:ok, current_count}, state}
   end
 
   def handle_call({:get_bucket, key}, _from, %{redix: r}=state) do
