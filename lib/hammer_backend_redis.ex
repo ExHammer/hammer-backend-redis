@@ -19,16 +19,6 @@ defmodule Hammer.Backend.Redis do
   end
 
   @doc """
-  Setup function, called once when the Hammer server is initialised
-  """
-  @spec setup(config::map)
-        :: :ok
-          | {:error, reason::String.t}
-  def setup(config) do
-    GenServer.call(__MODULE__, {:setup, config})
-  end
-
-  @doc """
   Record a hit in the bucket identified by `key`
   """
   @spec count_hit(key::{bucket::integer, id::String.t}, now::integer)
