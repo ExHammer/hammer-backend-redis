@@ -58,31 +58,18 @@ defmodule Hammer.Backend.Redis do
     GenServer.call(__MODULE__, {:delete_buckets, id})
   end
 
-  @doc """
-  Delete 'old' buckets which were last updated before `expire_now`.
-  """
-  @spec prune_expired_buckets(now::integer, expire_before::integer)
-        :: :ok
-         | {:error, reason::String.t}
-  def prune_expired_buckets(now, expire_before) do
-    GenServer.call(__MODULE__, {:prune_expired_buckets, now, expire_before})
-  end
-
 
   ## GenServer Callbacks
 
   def init(args) do
-    {:ok, redix} = Redix.start_link(args)
-    {:ok, %{redix: redix}}
+    redix_config = Keyword.get(args, :redix_config, [])
+    expiry_ms = Keyword.get(args, :expiry_ms, Hammer.default_expiry_ms())
+    {:ok, redix} = Redix.start_link(redix_config)
+    {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 
   def handle_call(:stop, _from, state) do
     {:stop, :normal, :ok, state}
-  end
-
-  def handle_call({:setup, config}, _from, state) do
-    %{expiry_ms: expiry_ms} = config
-    {:reply, :ok, Map.merge(state, %{expiry_seconds: expiry_ms/1000})}
   end
 
   def handle_call({:count_hit, key, now}, _from, %{redix: r}=state) do
@@ -162,11 +149,6 @@ defmodule Hammer.Backend.Redis do
     {:reply, {:ok, count_deleted}, state}
   end
 
-  def handle_call({:prune_expired_buckets, _now, _expire_before}, _from, state) do
-    # A no-op in this case
-    {:reply, :ok, state}
-  end
-
   defp make_redis_key({bucket, id}) do
     "Hammer:Redis:#{id}:#{bucket}"
   end
@@ -176,8 +158,8 @@ defmodule Hammer.Backend.Redis do
   end
 
   defp get_expiry(state) do
-    %{expiry_seconds: expiry} = state
-    round(expiry + 1)
+    %{expiry_ms: expiry_ms} = state
+    round((expiry_ms/1000) + 1)
   end
 
 end
