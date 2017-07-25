@@ -53,7 +53,7 @@ defmodule Hammer.Backend.Redis do
 
   def init(args) do
     redix_config = Keyword.get(args, :redix_config, [])
-    expiry_ms = Keyword.get(args, :expiry_ms, Hammer.default_expiry_ms())
+    expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
     {:ok, redix} = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
