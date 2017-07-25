@@ -61,9 +61,15 @@ defmodule HammerBackendRedisTest do
   end
 
 
-  # test "get_bucket" do
-
-  # end
+  test "get_bucket" do
+    with_mock Redix, [command: fn(_r, _c) -> [1, "one", "2", "3", "4"] end] do
+      assert {{1, "one"}, 2, 3, 4} = Hammer.Backend.Redis.get_bucket({1, "one"})
+      assert called Redix.command(
+        @fake_redix,
+        ["HMGET", "Hammer:Redis:one:1", "bucket", "id", "count", "created", "updated"]
+      )
+    end
+  end
 
   # test "delete buckets" do
 
