@@ -51,6 +51,12 @@ defmodule HammerBackendRedisTest do
     ] do
       assert {:ok, 42} = Hammer.Backend.Redis.count_hit({1, "one"}, 123)
       assert called Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"])
+      assert called Redix.pipeline(
+        @fake_redix, [
+          ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
+          ["HSET",    "Hammer:Redis:one:1", "updated", 123]
+        ]
+      )
     end
   end
 
