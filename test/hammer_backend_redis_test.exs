@@ -78,8 +78,20 @@ defmodule HammerBackendRedisTest do
     end
   end
 
-  # test "delete buckets" do
-
-  # end
+  test "delete buckets" do
+    with_mock Redix, [
+      command: fn(_r, _c) -> {:ok, ["a", "b"]} end,
+      pipeline: fn(_r, _c) -> {:ok, [2, nil]} end
+    ] do
+      assert {:ok, 2} = Hammer.Backend.Redis.delete_buckets("one")
+      assert called Redix.command(@fake_redix, ["SMEMBERS", "Hammer:Redis:Buckets:one"])
+      assert called Redix.pipeline(
+        @fake_redix, [
+          ["DEL", "a", "b"],
+          ["DEL", "Hammer:Redis:Buckets:one"]
+        ]
+      )
+    end
+  end
 
 end
