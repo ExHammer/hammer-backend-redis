@@ -16,7 +16,7 @@ defmodule HammerBackendRedisTest do
       command: fn(_r, _c) -> {:ok, 0} end,
       pipeline: fn(_r, _c) -> {:ok,["OK","QUEUED","QUEUED","QUEUED","QUEUED",["OK",1,1,1]]} end
     ] do
-      assert {:ok, 1} = Hammer.Backend.Redis.count_hit({1, "one"}, 123)
+      assert {:ok, 1} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
       assert called Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"])
       assert called Redix.pipeline(
         @fake_redix, [
@@ -49,7 +49,7 @@ defmodule HammerBackendRedisTest do
       command: fn(_r, _c) -> {:ok, 1} end,
       pipeline: fn(_r, _c) -> {:ok,[42,0]} end
     ] do
-      assert {:ok, 42} = Hammer.Backend.Redis.count_hit({1, "one"}, 123)
+      assert {:ok, 42} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
       assert called Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"])
       assert called Redix.pipeline(
         @fake_redix, [
@@ -63,7 +63,14 @@ defmodule HammerBackendRedisTest do
 
   test "get_bucket" do
     with_mock Redix, [command: fn(_r, _c) -> [1, "one", "2", "3", "4"] end] do
-      assert {{1, "one"}, 2, 3, 4} = Hammer.Backend.Redis.get_bucket({1, "one"})
+      assert {{1, "one"}, 2, 3, 4} == Hammer.Backend.Redis.get_bucket({1, "one"})
+      assert called Redix.command(
+        @fake_redix,
+        ["HMGET", "Hammer:Redis:one:1", "bucket", "id", "count", "created", "updated"]
+      )
+    end
+    with_mock Redix, [command: fn(_r, _c) -> [nil, nil, nil, nil, nil] end] do
+      assert nil == Hammer.Backend.Redis.get_bucket({1, "one"})
       assert called Redix.command(
         @fake_redix,
         ["HMGET", "Hammer:Redis:one:1", "bucket", "id", "count", "created", "updated"]
