@@ -6,6 +6,15 @@ defmodule Hammer.Backend.Redis do
 
   ## Public API
 
+  def start() do
+    start([])
+  end
+
+  def start(args) do
+    GenServer.start(__MODULE__, args, name: __MODULE__)
+  end
+
+
   def start_link() do
     start_link([])
   end
