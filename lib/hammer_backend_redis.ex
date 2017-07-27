@@ -109,11 +109,13 @@ defmodule Hammer.Backend.Redis do
         1
       {:ok, 1} ->
         # update
-        {:ok, [count, 0]} = Redix.pipeline(
+        {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} = Redix.pipeline(
           r,
           [
+            ["MULTI"],
             ["HINCRBY", redis_key, "count",   1],
-            ["HSET"   , redis_key, "updated", now]
+            ["HSET"   , redis_key, "updated", now],
+            ["EXEC"]
           ]
         )
         count

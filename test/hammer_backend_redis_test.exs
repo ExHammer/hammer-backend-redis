@@ -47,14 +47,16 @@ defmodule HammerBackendRedisTest do
   test "count_hit, after" do
     with_mock Redix, [
       command: fn(_r, _c) -> {:ok, 1} end,
-      pipeline: fn(_r, _c) -> {:ok,[42,0]} end
+      pipeline: fn(_r, _c) -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end
     ] do
       assert {:ok, 42} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
       assert called Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"])
       assert called Redix.pipeline(
         @fake_redix, [
+          ["MULTI"],
           ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
-          ["HSET",    "Hammer:Redis:one:1", "updated", 123]
+          ["HSET",    "Hammer:Redis:one:1", "updated", 123],
+          ["EXEC"]
         ]
       )
     end
