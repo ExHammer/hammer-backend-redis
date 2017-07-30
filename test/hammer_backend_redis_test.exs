@@ -64,15 +64,15 @@ defmodule HammerBackendRedisTest do
 
 
   test "get_bucket" do
-    with_mock Redix, [command: fn(_r, _c) -> [1, "one", "2", "3", "4"] end] do
-      assert {{1, "one"}, 2, 3, 4} == Hammer.Backend.Redis.get_bucket({1, "one"})
+    with_mock Redix, [command: fn(_r, _c) -> {:ok, [1, "one", "2", "3", "4"]} end] do
+      assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket({1, "one"})
       assert called Redix.command(
         @fake_redix,
         ["HMGET", "Hammer:Redis:one:1", "bucket", "id", "count", "created", "updated"]
       )
     end
-    with_mock Redix, [command: fn(_r, _c) -> [nil, nil, nil, nil, nil] end] do
-      assert nil == Hammer.Backend.Redis.get_bucket({1, "one"})
+    with_mock Redix, [command: fn(_r, _c) -> {:ok, [nil, nil, nil, nil, nil]} end] do
+      assert {:ok, nil} == Hammer.Backend.Redis.get_bucket({1, "one"})
       assert called Redix.command(
         @fake_redix,
         ["HMGET", "Hammer:Redis:one:1", "bucket", "id", "count", "created", "updated"]

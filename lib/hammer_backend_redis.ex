@@ -41,8 +41,12 @@ defmodule Hammer.Backend.Redis do
   Retrieve information about the bucket identified by `key`
   """
   @spec get_bucket(key::{bucket::integer, id::String.t})
-        :: nil
-         | {key::{bucket::integer, id::String.t}, count::integer, created::integer, updated::integer}
+        :: {:ok, {key::{bucket::integer, id::String.t},
+                  count::integer,
+                  created::integer,
+                  updated::integer}}
+        | {:ok, nil}
+        | {:error, reason::any}
   def get_bucket(key) do
     GenServer.call(__MODULE__, {:get_bucket, key})
   end
@@ -76,9 +80,10 @@ defmodule Hammer.Backend.Redis do
     expiry = get_expiry(state)
     redis_key = make_redis_key(key)
     bucket_set_key = make_bucket_set_key(id)
-    current_count = case Redix.command(r, ["EXISTS", redis_key]) do
+    result = case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
         {bucket, id} = key
+        # TODO: error handling?
         {
           :ok,
           ["OK","QUEUED","QUEUED","QUEUED","QUEUED",["OK",1,1,1]]
@@ -106,7 +111,7 @@ defmodule Hammer.Backend.Redis do
             ["EXEC"]
           ]
         )
-        1
+        {:ok, 1}
       {:ok, 1} ->
         # update
         {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} = Redix.pipeline(
@@ -118,36 +123,42 @@ defmodule Hammer.Backend.Redis do
             ["EXEC"]
           ]
         )
-        count
+        {:ok, count}
+      {:error, reason} ->
+        {:error, reason}
     end
-    {:reply, {:ok, current_count}, state}
+    {:reply, result, state}
   end
 
   def handle_call({:get_bucket, key}, _from, %{redix: r}=state) do
     redis_key = make_redis_key(key)
     command = ["HMGET", redis_key, "bucket", "id", "count", "created", "updated"]
     result = case Redix.command(r, command) do
-      [nil, nil, nil, nil, nil] ->
-        nil
-      [_bucket, _id, count, created, updated] ->
+      {:ok, [nil, nil, nil, nil, nil]} ->
+        {:ok, nil}
+      {:ok, [_bucket, _id, count, created, updated]} ->
         count = String.to_integer(count)
         created = String.to_integer(created)
         updated = String.to_integer(updated)
-        {key, count, created, updated}
+        {:ok, {key, count, created, updated}}
+      {:error, reason} ->
+        {:error, reason}
     end
     {:reply, result, state}
   end
 
   def handle_call({:delete_buckets, id}, _from, %{redix: r}=state) do
     bucket_set_key = make_bucket_set_key(id)
-    count_deleted = case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
+    result = case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
       {:ok, []} ->
-        0
+        {:ok, 0}
       {:ok, keys} ->
         {:ok, [count_deleted, _]} = Redix.pipeline(r, [["DEL" | keys], ["DEL", bucket_set_key]])
-        count_deleted
+        {:ok, count_deleted}
+      {:error, reason} ->
+        {:error, reason}
     end
-    {:reply, {:ok, count_deleted}, state}
+    {:reply, result, state}
   end
 
   defp make_redis_key({bucket, id}) do
