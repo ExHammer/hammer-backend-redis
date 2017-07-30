@@ -3,6 +3,13 @@ defmodule HammerBackendRedis.Mixfile do
 
   def project do
     [app: :hammer_backend_redis,
+     description: "Redis backend for Hammer rate-limiter",
+     package: [name: :hammer_backend_redis,
+               maintainers: ["Shane Kilkelly (shane@kilkelly.me)"],
+               licenses: ["MIT"],
+               links: %{"GitHub" => "https://github.com/ExHammer/hammer-backend-redis"}],
+     source_url: "https://github.com/ExHammer/hammer-backend-redis",
+     homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
      version: "0.1.0",
      elixir: "~> 1.4",
      build_embedded: Mix.env == :prod,
