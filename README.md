@@ -1,6 +1,6 @@
 # HammerBackendRedis
 
-**TODO: Add description**
+A Redis backend for the [Hammer](https://github.com/ExHammer/hammer) rate-limiter.
 
 ## Installation
 
