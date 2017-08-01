@@ -14,6 +14,15 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/hammer_backend_redis](https://hexdocs.pm/hammer_backend_redis).
+## Usage
+
+```elixir
+      worker(Hammer.Backend.Redis, [[expiry_ms: 1000 * 60 * 2,
+                                     redix_config: []]]),
+```
+
+See the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html#content) for more.
+
+## Documentation
+
+On hexdocs: [https://hexdocs.pm/hammer_backend_redis/api-reference.html](https://hexdocs.pm/hammer_backend_redis/api-reference.html)
