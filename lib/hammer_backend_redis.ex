@@ -65,7 +65,7 @@ defmodule Hammer.Backend.Redis do
   ## GenServer Callbacks
 
   def init(args) do
-    redix_config = Keyword.get(args, :redix_config, [])
+    redix_config = Keyword.get(args, :redix_config, Keyword.get(args, :redis_config, []))
     expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
     {:ok, redix} = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
