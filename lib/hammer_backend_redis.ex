@@ -2,6 +2,22 @@ defmodule Hammer.Backend.Redis do
   use GenServer
   @moduledoc """
   Documentation for Hammer.Backend.Redis
+
+  This backend uses the [Redix](https://hex.pm/packages/redix) library to connect to Redis.
+
+  The backend process is started by calling `start_link`:
+
+      Hammer.Backend.Redis.start_link(
+        expiry_ms: 60_000 * 10,
+        redix_config: [host: "example.com", port: 5050]
+      )
+
+  Options are:
+
+  - `expiry_ms`: Expiry time of buckets in milliseconds,
+    used to set TTL on Redis keys
+  - `redix_config`: Keyword list of options to the Redix redis client,
+    also aliased to `redis_config`
   """
 
   ## Public API
