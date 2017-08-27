@@ -2,6 +2,8 @@
 
 [![Build Status](https://travis-ci.org/ExHammer/hammer-backend-redis.svg?branch=master)](https://travis-ci.org/ExHammer/hammer-backend-redis)
 
+[![Coverage Status](https://coveralls.io/repos/github/ExHammer/hammer-backend-redis/badge.svg?branch=master)](https://coveralls.io/github/ExHammer/hammer-backend-redis?branch=master)
+
 
 A Redis backend for the [Hammer](https://github.com/ExHammer/hammer) rate-limiter.
 
