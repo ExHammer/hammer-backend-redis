@@ -16,7 +16,7 @@ To get started, read the [Hammer Tutorial]() first, then add the `hammer_backend
 
 ```elixir
       worker(Hammer.Backend.Redis, [[expiry_ms: 1000 * 60 * 2,
-                                     redix_config: [host: "localhost", port: 5454]]]),
+                                     redix_config: [host: "localhost", port: 6379]]]),
 ```
 
 (the `redix_config` arg is a keyword-list which is passed to Redix, it's also aliased to `redis_config`, with an `s`)
