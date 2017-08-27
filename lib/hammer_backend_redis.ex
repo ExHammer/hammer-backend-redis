@@ -25,7 +25,7 @@ defmodule Hammer.Backend.Redis do
 
   ## Public API
 
-  def start() do
+  def start do
     start([])
   end
 
@@ -33,8 +33,7 @@ defmodule Hammer.Backend.Redis do
     GenServer.start(__MODULE__, args, name: __MODULE__)
   end
 
-
-  def start_link() do
+  def start_link do
     start_link([])
   end
 
@@ -42,7 +41,7 @@ defmodule Hammer.Backend.Redis do
     GenServer.start_link(__MODULE__, args, name: __MODULE__)
   end
 
-  def stop() do
+  def stop do
     GenServer.call(__MODULE__, :stop)
   end
 
@@ -80,11 +79,12 @@ defmodule Hammer.Backend.Redis do
     GenServer.call(__MODULE__, {:delete_buckets, id})
   end
 
-
   ## GenServer Callbacks
 
   def init(args) do
-    redix_config = Keyword.get(args, :redix_config, Keyword.get(args, :redis_config, []))
+    redix_config = Keyword.get(
+      args, :redix_config, Keyword.get(args, :redis_config, [])
+    )
     expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
     {:ok, redix} = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
@@ -94,7 +94,7 @@ defmodule Hammer.Backend.Redis do
     {:stop, :normal, :ok, state}
   end
 
-  def handle_call({:count_hit, key, now}, _from, %{redix: r}=state) do
+  def handle_call({:count_hit, key, now}, _from, %{redix: r} = state) do
     {bucket, id} = key
     expiry = get_expiry(state)
     redis_key = make_redis_key(key)
@@ -102,10 +102,9 @@ defmodule Hammer.Backend.Redis do
     result = case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
         {bucket, id} = key
-        # TODO: error handling?
         {
           :ok,
-          ["OK","QUEUED","QUEUED","QUEUED","QUEUED",["OK",1,1,1]]
+          ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]
         } = Redix.pipeline(
           r,
           [
@@ -149,7 +148,7 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
-  def handle_call({:get_bucket, key}, _from, %{redix: r}=state) do
+  def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
     redis_key = make_redis_key(key)
     command = ["HMGET", redis_key, "bucket", "id", "count", "created", "updated"]
     result = case Redix.command(r, command) do
@@ -166,13 +165,16 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
-  def handle_call({:delete_buckets, id}, _from, %{redix: r}=state) do
+  def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
     bucket_set_key = make_bucket_set_key(id)
     result = case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
       {:ok, []} ->
         {:ok, 0}
       {:ok, keys} ->
-        {:ok, [count_deleted, _]} = Redix.pipeline(r, [["DEL" | keys], ["DEL", bucket_set_key]])
+        {:ok, [count_deleted, _]} = Redix.pipeline(
+          r,
+          [["DEL" | keys], ["DEL", bucket_set_key]]
+        )
         {:ok, count_deleted}
       {:error, reason} ->
         {:error, reason}
@@ -190,7 +192,7 @@ defmodule Hammer.Backend.Redis do
 
   defp get_expiry(state) do
     %{expiry_ms: expiry_ms} = state
-    round((expiry_ms/1000) + 1)
+    round((expiry_ms / 1000) + 1)
   end
 
 end
