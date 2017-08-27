@@ -1,5 +1,8 @@
 # HammerBackendRedis
 
+[![Build Status](https://travis-ci.org/ExHammer/hammer-backend-redis.svg?branch=master)](https://travis-ci.org/ExHammer/hammer-backend-redis)
+
+
 A Redis backend for the [Hammer](https://github.com/ExHammer/hammer) rate-limiter.
 
 ## Installation
