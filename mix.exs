@@ -15,6 +15,8 @@ defmodule HammerBackendRedis.Mixfile do
      build_embedded: Mix.env == :prod,
      start_permanent: Mix.env == :prod,
      deps: deps(),
+     docs: [main: "frontpage",
+            extras: ["doc_src/Frontpage.md"]],
      test_coverage: [tool: ExCoveralls],
      preferred_cli_env: ["coveralls": :test,
                          "coveralls.detail": :test,
