@@ -4,7 +4,7 @@
 
 This package provides a Redis backend for Hammer, using the [Redix](https://github.com/whatyouhide/redix) library to connect to the Redis server.
 
-To get started, read the [Hammer Tutorial]() first, then add the `hammer_backend_redis` dependency:
+To get started, read the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html) first, then add the `hammer_backend_redis` dependency:
 
 ```elixir
     def deps do
