@@ -1,4 +1,26 @@
+# Hammer makefile
+
+default: test docs credo coveralls
+
+
 test:
 	mix test --no-start
 
-.PHONY: test
+
+docs:
+	mix docs
+
+
+credo:
+	mix credo --strict
+
+
+coveralls:
+	mix coveralls
+
+
+coveralls-travis:
+	mix coveralls.travis
+
+
+.PHONY: test docs credo coveralls coveralls-travis

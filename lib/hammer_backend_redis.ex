@@ -1,5 +1,5 @@
 defmodule Hammer.Backend.Redis do
-  use GenServer
+
   @moduledoc """
   Documentation for Hammer.Backend.Redis
 
@@ -16,9 +16,12 @@ defmodule Hammer.Backend.Redis do
 
   - `expiry_ms`: Expiry time of buckets in milliseconds,
     used to set TTL on Redis keys
-  - `redix_config`: Keyword list of options to the Redix redis client,
+  - `redix_config`: Keyword list of options to the `Redix` redis client,
     also aliased to `redis_config`
   """
+
+  use GenServer
+  @behaviour Hammer.Backend
 
   ## Public API
 

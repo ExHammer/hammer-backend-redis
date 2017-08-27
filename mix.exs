@@ -36,6 +36,7 @@ defmodule HammerBackendRedis.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [{:redix, "~> 0.6"},
+     {:hammer, "~> 1.0.0"},
      {:mock, "~> 0.2.0", only: :test},
      {:ex_doc, "~> 0.16", only: :dev}]
   end
