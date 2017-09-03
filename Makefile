@@ -20,7 +20,7 @@ coveralls:
 
 
 coveralls-travis:
-	mix coveralls.travis
+	mix coveralls.travis --no-start
 
 
 .PHONY: test docs credo coveralls coveralls-travis
