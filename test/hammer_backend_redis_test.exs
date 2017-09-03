@@ -2,7 +2,7 @@ defmodule HammerBackendRedisTest do
   use ExUnit.Case
   import Mock
 
-  @fake_redix :fake_redix
+  @fake_redix :hammer_backend_redis_redix
 
   setup _context do
     with_mock Redix, [start_link: fn(_c) -> {:ok, @fake_redix} end] do

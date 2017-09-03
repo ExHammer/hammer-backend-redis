@@ -16,7 +16,7 @@ credo:
 
 
 coveralls:
-	mix coveralls
+	mix coveralls --no-start
 
 
 coveralls-travis:
