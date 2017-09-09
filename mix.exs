@@ -29,8 +29,7 @@ defmodule HammerBackendRedis.Mixfile do
   # Type "mix help compile.app" for more information
   def application do
     # Specify extra applications you'll use from Erlang/Elixir
-    [mod: {Hammer.Backend.Redis.Application, []},
-     extra_applications: [:logger, :redix]]
+    [extra_applications: [:logger, :redix]]
   end
 
   # Dependencies can be Hex packages:
@@ -44,7 +43,8 @@ defmodule HammerBackendRedis.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [{:redix, "~> 0.6"},
-     {:hammer, [git: "https://github.com/ExHammer/hammer.git", branch: "issue-12-new-api"]},
+     # {:hammer, [git: "https://github.com/ExHammer/hammer.git", branch: "issue-12-new-api"]},
+     {:hammer, path: "../hammer"},
      {:mock, "~> 0.2.0", only: :test},
      {:ex_doc, "~> 0.16", only: :dev},
      {:dialyxir, "~> 0.5", only: [:dev], runtime: false},
