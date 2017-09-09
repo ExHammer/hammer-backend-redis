@@ -5,6 +5,10 @@ defmodule Hammer.Backend.Redis.Supervisor do
 
   use Supervisor
 
+  def start_link do
+    start_link([], [])
+  end
+
   def start_link(config, opts) do
     Supervisor.start_link(__MODULE__, config, opts)
   end

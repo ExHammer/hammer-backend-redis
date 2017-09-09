@@ -97,3 +97,11 @@ defmodule HammerBackendRedisTest do
   end
 
 end
+
+defmodule HammerBackendRedisSupervisorTest do
+  use ExUnit.Case
+
+  test "the supervisor starts correctly" do
+    assert {:ok, _pid} = Hammer.Backend.Redis.Supervisor.start_link()
+  end
+end
