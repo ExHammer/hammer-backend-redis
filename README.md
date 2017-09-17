@@ -22,12 +22,22 @@ end
 
 ## Usage
 
+Just configure the `:hammer` application to use the Redis backend:
+
 ```elixir
-      worker(Hammer.Backend.Redis, [[expiry_ms: 1000 * 60 * 2,
-                                     redix_config: []]]),
+config :hammer,
+  backend: {Hammer.Backend.Redis, [expiry_ms: 60_000 * 60 * 2,
+                                   redix_config: [host: "localhost",
+                                                  port: 6379]]}
 ```
 
-See the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html#content) for more.
+(the `redix_config` arg is a keyword-list which is passed to Redix, it's also
+aliased to `redis_config`, with an `s`)
+
+And that's it, calls to `Hammer.check_rate/3` and so on will use Redis to store
+the rate-limit counters.
+
+See the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html) for more.
 
 ## Documentation
 
