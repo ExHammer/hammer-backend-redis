@@ -22,7 +22,7 @@ end
 
 ## Usage
 
-Just configure the `:hammer` application to use the Redis backend:
+Configure the `:hammer` application to use the Redis backend:
 
 ```elixir
 config :hammer,

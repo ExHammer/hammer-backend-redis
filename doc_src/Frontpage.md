@@ -15,7 +15,7 @@ the `hammer_backend_redis` dependency:
 
 ```elixir
     def deps do
-      [{:hammer_backend_redis, "~> 1.0.0"}]
+      [{:hammer_backend_redis, "~> 1.0"}]
     end
 ```
 
@@ -24,8 +24,7 @@ the `hammer_backend_redis` dependency:
 ```elixir
 config :hammer,
   backend: {Hammer.Backend.Redis, [expiry_ms: 60_000 * 60 * 2,
-                                   redix_config: [host: "localhost",
-                                                  port: 6379]]}
+                                   redix_config: [host: "some.host"]]}
 ```
 
 (the `redix_config` arg is a keyword-list which is passed to Redix, it's also
