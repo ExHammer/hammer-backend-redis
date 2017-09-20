@@ -14,6 +14,9 @@ defmodule Hammer.Backend.Redis.Supervisor do
   end
 
   def init(config) do
+    # If redix_config is not present, fall back to redis_config (with an 's'),
+    # and then fall back to an empty list. We do this as end Users are bound to
+    # misread 'redix' as 'redis'
     redix_config = Keyword.get(
       config,
       :redix_config,
