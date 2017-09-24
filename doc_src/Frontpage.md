@@ -15,7 +15,7 @@ the `hammer_backend_redis` dependency:
 
 ```elixir
     def deps do
-      [{:hammer_backend_redis, "~> 1.0"}]
+      [{:hammer_backend_redis, "~> 2.0"}]
     end
 ```
 
