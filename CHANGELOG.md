@@ -1,5 +1,13 @@
 # Changelog
 
+
+## 2.0.0
+
+### Changed
+
+- Updated to new Hammer API
+
+
 ## 1.0.0
 
 ### Changed
