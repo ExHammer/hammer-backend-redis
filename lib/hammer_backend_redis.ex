@@ -1,5 +1,4 @@
 defmodule Hammer.Backend.Redis do
-
   @moduledoc """
   Documentation for Hammer.Backend.Redis
 
@@ -48,9 +47,9 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Record a hit in the bucket identified by `key`
   """
-  @spec count_hit(key::{bucket::integer, id::String.t}, now::integer)
-        :: {:ok, count::integer}
-         | {:error, reason::String.t}
+  @spec count_hit(key :: {bucket :: integer, id :: String.t()}, now :: integer) ::
+          {:ok, count :: integer}
+          | {:error, reason :: String.t()}
   def count_hit(key, now) do
     GenServer.call(__MODULE__, {:count_hit, key, now})
   end
@@ -58,13 +57,12 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Retrieve information about the bucket identified by `key`
   """
-  @spec get_bucket(key::{bucket::integer, id::String.t})
-        :: {:ok, {key::{bucket::integer, id::String.t},
-                  count::integer,
-                  created::integer,
-                  updated::integer}}
-        | {:ok, nil}
-        | {:error, reason::any}
+  @spec get_bucket(key :: {bucket :: integer, id :: String.t()}) ::
+          {:ok,
+           {key :: {bucket :: integer, id :: String.t()}, count :: integer, created :: integer,
+            updated :: integer}}
+          | {:ok, nil}
+          | {:error, reason :: any}
   def get_bucket(key) do
     GenServer.call(__MODULE__, {:get_bucket, key})
   end
@@ -72,9 +70,9 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Delete all buckets associated with `id`.
   """
-  @spec delete_buckets(id::String.t)
-        :: {:ok, count_deleted::integer}
-         | {:error, reason::String.t}
+  @spec delete_buckets(id :: String.t()) ::
+          {:ok, count_deleted :: integer}
+          | {:error, reason :: String.t()}
   def delete_buckets(id) do
     GenServer.call(__MODULE__, {:delete_buckets, id})
   end
@@ -96,86 +94,109 @@ defmodule Hammer.Backend.Redis do
     expiry = get_expiry(state)
     redis_key = make_redis_key(key)
     bucket_set_key = make_bucket_set_key(id)
-    result = case Redix.command(r, ["EXISTS", redis_key]) do
-      {:ok, 0} ->
-        {bucket, id} = key
-        {
-          :ok,
-          ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]
-        } = Redix.pipeline(
-          r,
-          [
-            ["MULTI"],
-            [
-              "HMSET", redis_key,
-              "bucket", bucket,
-              "id", id,
-              "count", 1,
-              "created", now,
-              "updated", now
-            ],
-            [
-              "SADD", bucket_set_key, redis_key
-            ],
-            [
-              "EXPIRE", redis_key, expiry
-            ],
-            [
-              "EXPIRE", bucket_set_key, expiry
-            ],
-            ["EXEC"]
-          ]
-        )
-        {:ok, 1}
-      {:ok, 1} ->
-        # update
-        {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} = Redix.pipeline(
-          r,
-          [
-            ["MULTI"],
-            ["HINCRBY", redis_key, "count",   1],
-            ["HSET"   , redis_key, "updated", now],
-            ["EXEC"]
-          ]
-        )
-        {:ok, count}
-      {:error, reason} ->
-        {:error, reason}
-    end
+
+    result =
+      case Redix.command(r, ["EXISTS", redis_key]) do
+        {:ok, 0} ->
+          {bucket, id} = key
+
+          {
+            :ok,
+            ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]
+          } =
+            Redix.pipeline(r, [
+              ["MULTI"],
+              [
+                "HMSET",
+                redis_key,
+                "bucket",
+                bucket,
+                "id",
+                id,
+                "count",
+                1,
+                "created",
+                now,
+                "updated",
+                now
+              ],
+              [
+                "SADD",
+                bucket_set_key,
+                redis_key
+              ],
+              [
+                "EXPIRE",
+                redis_key,
+                expiry
+              ],
+              [
+                "EXPIRE",
+                bucket_set_key,
+                expiry
+              ],
+              ["EXEC"]
+            ])
+
+          {:ok, 1}
+
+        {:ok, 1} ->
+          # update
+          {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} =
+            Redix.pipeline(r, [
+              ["MULTI"],
+              ["HINCRBY", redis_key, "count", 1],
+              ["HSET", redis_key, "updated", now],
+              ["EXEC"]
+            ])
+
+          {:ok, count}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
     {:reply, result, state}
   end
 
   def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
     redis_key = make_redis_key(key)
     command = ["HMGET", redis_key, "bucket", "id", "count", "created", "updated"]
-    result = case Redix.command(r, command) do
-      {:ok, [nil, nil, nil, nil, nil]} ->
-        {:ok, nil}
-      {:ok, [_bucket, _id, count, created, updated]} ->
-        count = String.to_integer(count)
-        created = String.to_integer(created)
-        updated = String.to_integer(updated)
-        {:ok, {key, count, created, updated}}
-      {:error, reason} ->
-        {:error, reason}
-    end
+
+    result =
+      case Redix.command(r, command) do
+        {:ok, [nil, nil, nil, nil, nil]} ->
+          {:ok, nil}
+
+        {:ok, [_bucket, _id, count, created, updated]} ->
+          count = String.to_integer(count)
+          created = String.to_integer(created)
+          updated = String.to_integer(updated)
+          {:ok, {key, count, created, updated}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
     {:reply, result, state}
   end
 
   def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
     bucket_set_key = make_bucket_set_key(id)
-    result = case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
-      {:ok, []} ->
-        {:ok, 0}
-      {:ok, keys} ->
-        {:ok, [count_deleted, _]} = Redix.pipeline(
-          r,
-          [["DEL" | keys], ["DEL", bucket_set_key]]
-        )
-        {:ok, count_deleted}
-      {:error, reason} ->
-        {:error, reason}
-    end
+
+    result =
+      case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
+        {:ok, []} ->
+          {:ok, 0}
+
+        {:ok, keys} ->
+          {:ok, [count_deleted, _]} = Redix.pipeline(r, [["DEL" | keys], ["DEL", bucket_set_key]])
+          {:ok, count_deleted}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
     {:reply, result, state}
   end
 
@@ -189,7 +210,6 @@ defmodule Hammer.Backend.Redis do
 
   defp get_expiry(state) do
     %{expiry_ms: expiry_ms} = state
-    round((expiry_ms / 1000) + 1)
+    round(expiry_ms / 1000 + 1)
   end
-
 end

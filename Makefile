@@ -1,6 +1,10 @@
 # Hammer makefile
 
-default: test docs credo coveralls
+default: format test docs credo coveralls
+
+
+format:
+	mix format mix.exs "lib/**/*.{ex,exs}"
 
 
 test:
@@ -11,10 +15,6 @@ docs:
 	mix docs
 
 
-credo:
-	mix credo --strict
-
-
 coveralls:
 	mix coveralls --no-start
 
@@ -23,4 +23,4 @@ coveralls-travis:
 	mix coveralls.travis --no-start
 
 
-.PHONY: test docs credo coveralls coveralls-travis
+.PHONY: format test docs credo coveralls coveralls-travis
