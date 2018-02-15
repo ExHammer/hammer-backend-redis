@@ -9,6 +9,10 @@ defmodule Hammer.Backend.Redis.Supervisor do
     start_link([], [])
   end
 
+  def start_link(config) do
+    start_link(config, [])
+  end
+
   def start_link(config, opts) do
     Supervisor.start_link(__MODULE__, config, opts)
   end
@@ -32,10 +36,10 @@ defmodule Hammer.Backend.Redis.Supervisor do
       redix_process_name: redix_process_name
     ]
     children = [
-      worker(Redix, [redix_config, [name: redix_process_name]]),
-      worker(Hammer.Backend.Redis, [backend_config])
+      {Redix, [redix_config, [name: redix_process_name]]},
+      {Hammer.Backend.Redis, [backend_config]}
     ]
-    supervise(children, strategy: :one_for_one, name: __MODULE__)
+    Supervisor.init(children, strategy: :one_for_one, name: __MODULE__)
   end
 
 end
