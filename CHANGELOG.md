@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.0
+
+### Changed
+
+- Require elixir >= 1.6
+
 
 ## 2.0.0
 
