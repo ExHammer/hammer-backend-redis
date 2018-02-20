@@ -49,8 +49,7 @@ defmodule HammerBackendRedis.Mixfile do
   defp deps do
     [
       {:redix, "~> 0.7"},
-      # {:hammer, "~> 3.0"},
-      {:hammer, path: "../hammer"},
+      {:hammer, "~> 3.0"},
       {:mock, "~> 0.2.0", only: :test},
       {:ex_doc, "~> 0.16", only: :dev},
       {:dialyxir, "~> 0.5", only: [:dev], runtime: false},
