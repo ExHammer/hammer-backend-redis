@@ -19,6 +19,10 @@ defmodule Hammer.Backend.Redis do
     also aliased to `redis_config`
   """
 
+  @type bucket_key :: {bucket :: integer, id :: String.t()}
+  @type bucket_info ::
+          {key :: bucket_key, count :: integer, created :: integer, updated :: integer}
+
   use GenServer
   @behaviour Hammer.Backend
 
@@ -47,41 +51,50 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Record a hit in the bucket identified by `key`
   """
-  @spec count_hit(key :: {bucket :: integer, id :: String.t()}, now :: integer) ::
+  @spec count_hit(
+          pid :: pid(),
+          key :: bucket_key,
+          now :: integer
+        ) ::
           {:ok, count :: integer}
-          | {:error, reason :: String.t()}
-  def count_hit(key, now) do
-    GenServer.call(__MODULE__, {:count_hit, key, now})
+          | {:error, reason :: any}
+  def count_hit(pid, key, now) do
+    GenServer.call(pid, {:count_hit, key, now})
   end
 
   @doc """
   Retrieve information about the bucket identified by `key`
   """
-  @spec get_bucket(key :: {bucket :: integer, id :: String.t()}) ::
-          {:ok,
-           {key :: {bucket :: integer, id :: String.t()}, count :: integer, created :: integer,
-            updated :: integer}}
+  @spec get_bucket(
+          pid :: pid(),
+          key :: bucket_key
+        ) ::
+          {:ok, info :: bucket_info}
           | {:ok, nil}
           | {:error, reason :: any}
-  def get_bucket(key) do
-    GenServer.call(__MODULE__, {:get_bucket, key})
+  def get_bucket(pid, key) do
+    GenServer.call(pid, {:get_bucket, key})
   end
 
   @doc """
   Delete all buckets associated with `id`.
   """
-  @spec delete_buckets(id :: String.t()) ::
+  @spec delete_buckets(
+          pid :: pid(),
+          id :: String.t()
+        ) ::
           {:ok, count_deleted :: integer}
-          | {:error, reason :: String.t()}
-  def delete_buckets(id) do
-    GenServer.call(__MODULE__, {:delete_buckets, id})
+          | {:error, reason :: any}
+  def delete_buckets(pid, id) do
+    GenServer.call(pid, {:delete_buckets, id})
   end
 
   ## GenServer Callbacks
 
   def init(args) do
     expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
-    redix = Keyword.get(args, :redix_process_name, :hammer_backend_redis_redix)
+    redix_config = Keyword.get(args, :redix_config, [])
+    redix = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 

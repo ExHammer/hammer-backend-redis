@@ -2,27 +2,26 @@ defmodule HammerBackendRedisTest do
   use ExUnit.Case
   import Mock
 
-  @fake_redix :hammer_backend_redis_redix
-
   setup _context do
-    with_mock Redix, start_link: fn _c -> {:ok, @fake_redix} end do
-      {:ok, _pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
+    with_mock Redix, start_link: fn _c -> {:ok, 1} end do
+      {:ok, pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
+      {:ok, [pid: pid]}
     end
-
-    {:ok, []}
   end
 
-  test "count_hit, first" do
+  test "count_hit, first", context do
+    pid = context[:pid]
+
     with_mock Redix,
       command: fn _r, _c -> {:ok, 0} end,
       pipeline: fn _r, _c ->
         {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
       end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
-      assert called(Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"]))
+      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
+      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
-               Redix.pipeline(@fake_redix, [
+               Redix.pipeline(:_, [
                  ["MULTI"],
                  [
                    "HMSET",
@@ -59,15 +58,17 @@ defmodule HammerBackendRedisTest do
     end
   end
 
-  test "count_hit, after" do
+  test "count_hit, after", context do
+    pid = context[:pid]
+
     with_mock Redix,
       command: fn _r, _c -> {:ok, 1} end,
       pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
-      assert {:ok, 42} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
-      assert called(Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"]))
+      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
+      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
-               Redix.pipeline(@fake_redix, [
+               Redix.pipeline(:_, [
                  ["MULTI"],
                  ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
                  ["HSET", "Hammer:Redis:one:1", "updated", 123],
@@ -77,12 +78,14 @@ defmodule HammerBackendRedisTest do
     end
   end
 
-  test "get_bucket" do
+  test "get_bucket", context do
+    pid = context[:pid]
+
     with_mock Redix, command: fn _r, _c -> {:ok, [1, "one", "2", "3", "4"]} end do
-      assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket({1, "one"})
+      assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
 
       assert called(
-               Redix.command(@fake_redix, [
+               Redix.command(:_, [
                  "HMGET",
                  "Hammer:Redis:one:1",
                  "bucket",
@@ -95,10 +98,10 @@ defmodule HammerBackendRedisTest do
     end
 
     with_mock Redix, command: fn _r, _c -> {:ok, [nil, nil, nil, nil, nil]} end do
-      assert {:ok, nil} == Hammer.Backend.Redis.get_bucket({1, "one"})
+      assert {:ok, nil} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
 
       assert called(
-               Redix.command(@fake_redix, [
+               Redix.command(:_, [
                  "HMGET",
                  "Hammer:Redis:one:1",
                  "bucket",
@@ -111,27 +114,21 @@ defmodule HammerBackendRedisTest do
     end
   end
 
-  test "delete buckets" do
+  test "delete buckets", context do
+    pid = context[:pid]
+
     with_mock Redix,
       command: fn _r, _c -> {:ok, ["a", "b"]} end,
       pipeline: fn _r, _c -> {:ok, [2, nil]} end do
-      assert {:ok, 2} = Hammer.Backend.Redis.delete_buckets("one")
-      assert called(Redix.command(@fake_redix, ["SMEMBERS", "Hammer:Redis:Buckets:one"]))
+      assert {:ok, 2} = Hammer.Backend.Redis.delete_buckets(pid, "one")
+      assert called(Redix.command(:_, ["SMEMBERS", "Hammer:Redis:Buckets:one"]))
 
       assert called(
-               Redix.pipeline(@fake_redix, [
+               Redix.pipeline(:_, [
                  ["DEL", "a", "b"],
                  ["DEL", "Hammer:Redis:Buckets:one"]
                ])
              )
     end
-  end
-end
-
-defmodule HammerBackendRedisSupervisorTest do
-  use ExUnit.Case
-
-  test "the supervisor starts correctly" do
-    assert {:ok, _pid} = Hammer.Backend.Redis.Supervisor.start_link()
   end
 end
