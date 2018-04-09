@@ -33,7 +33,7 @@ defmodule Hammer.Backend.Redis do
   end
 
   def start(args) do
-    GenServer.start(__MODULE__, args, name: __MODULE__)
+    GenServer.start(__MODULE__, args)
   end
 
   def start_link do
@@ -41,7 +41,7 @@ defmodule Hammer.Backend.Redis do
   end
 
   def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
+    GenServer.start_link(__MODULE__, args)
   end
 
   def stop do
@@ -94,7 +94,7 @@ defmodule Hammer.Backend.Redis do
   def init(args) do
     expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
     redix_config = Keyword.get(args, :redix_config, [])
-    redix = Redix.start_link(redix_config)
+    {:ok, redix} = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 
