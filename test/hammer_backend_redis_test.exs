@@ -14,7 +14,10 @@ defmodule HammerBackendRedisTest do
 
   test "count_hit, first" do
     with_mock Redix,
-      command: fn _r, _c -> {:ok, 0} end,
+      command: fn
+        _r, ["WATCH", _] -> {:ok, "OK"}
+        _r, ["EXISTS", _] -> {:ok, 0}
+      end,
       pipeline: fn _r, _c ->
         {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
       end do
@@ -75,6 +78,76 @@ defmodule HammerBackendRedisTest do
                ])
              )
     end
+  end
+
+  test "count_hit, handles race condition" do
+    {:ok, agent} = Agent.start_link(fn -> 0 end)
+
+    with_mock Redix,
+      command: fn
+        _r, ["WATCH", _] -> {:ok, "OK"}
+        _r, ["EXISTS", _] -> {:ok, Agent.get_and_update(agent, fn c -> {c, 1} end)}
+      end,
+      pipeline: fn
+        _r, args when length(args) == 6 ->
+          {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]}
+
+        _r, args when length(args) == 4 ->
+          {:ok, ["OK", "QUEUED", "QUEUED", [1, 0]]}
+      end do
+      assert {:ok, 1} == Hammer.Backend.Redis.count_hit({1, "one"}, 123)
+      assert called(Redix.command(@fake_redix, ["EXISTS", "Hammer:Redis:one:1"]))
+
+      # First attempt.
+      assert called(Redix.command(@fake_redix, ["WATCH", "Hammer:Redis:Buckets:one"]))
+      assert called(
+               Redix.pipeline(@fake_redix, [
+                 ["MULTI"],
+                 [
+                   "HMSET",
+                   "Hammer:Redis:one:1",
+                   "bucket",
+                   1,
+                   "id",
+                   "one",
+                   "count",
+                   1,
+                   "created",
+                   123,
+                   "updated",
+                   123
+                 ],
+                 [
+                   "SADD",
+                   "Hammer:Redis:Buckets:one",
+                   "Hammer:Redis:one:1"
+                 ],
+                 [
+                   "EXPIRE",
+                   "Hammer:Redis:one:1",
+                   61
+                 ],
+                 [
+                   "EXPIRE",
+                   "Hammer:Redis:Buckets:one",
+                   61
+                 ],
+                 ["EXEC"]
+               ])
+             )
+
+      # Second attempt.
+      assert called(
+               Redix.pipeline(@fake_redix, [
+                 ["MULTI"],
+                 ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
+                 ["HSET", "Hammer:Redis:one:1", "updated", 123],
+                 ["EXEC"]
+               ])
+             )
+    end
+
+    :ok = Agent.stop(agent)
   end
 
   test "get_bucket" do
