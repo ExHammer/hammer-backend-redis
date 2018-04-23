@@ -15,8 +15,8 @@ can be installed by adding `hammer_backend_redis` to your list of dependencies i
 
 ```elixir
 def deps do
-  [{:hammer_backend_redis, "~> 3.0"},
-   {:hammer, "~> 3.0"}]
+  [{:hammer_backend_redis, "~> 4.0"},
+   {:hammer, "~> 4.0"}]
 end
 ```
 
@@ -31,8 +31,9 @@ config :hammer,
                                                   port: 6379]]}
 ```
 
-(the `redix_config` arg is a keyword-list which is passed to Redix, it's also
-aliased to `redis_config`, with an `s`)
+(the `redix_config` arg is a keyword-list which is passed to
+[Redix](https://hex.pm/packages/redix), it's also aliased to `redis_config`,
+with an `s`)
 
 And that's it, calls to `Hammer.check_rate/3` and so on will use Redis to store
 the rate-limit counters.
