@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.0
+
+### Changed
+
+- Update to `Hammer 4.0`
+
+
 ## 3.0.0
 
 ### Changed
