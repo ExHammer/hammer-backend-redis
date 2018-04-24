@@ -103,72 +103,9 @@ defmodule Hammer.Backend.Redis do
   end
 
   def handle_call({:count_hit, key, now}, _from, %{redix: r} = state) do
-    {bucket, id} = key
     expiry = get_expiry(state)
-    redis_key = make_redis_key(key)
-    bucket_set_key = make_bucket_set_key(id)
 
-    result =
-      case Redix.command(r, ["EXISTS", redis_key]) do
-        {:ok, 0} ->
-          {bucket, id} = key
-
-          {
-            :ok,
-            ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]
-          } =
-            Redix.pipeline(r, [
-              ["MULTI"],
-              [
-                "HMSET",
-                redis_key,
-                "bucket",
-                bucket,
-                "id",
-                id,
-                "count",
-                1,
-                "created",
-                now,
-                "updated",
-                now
-              ],
-              [
-                "SADD",
-                bucket_set_key,
-                redis_key
-              ],
-              [
-                "EXPIRE",
-                redis_key,
-                expiry
-              ],
-              [
-                "EXPIRE",
-                bucket_set_key,
-                expiry
-              ],
-              ["EXEC"]
-            ])
-
-          {:ok, 1}
-
-        {:ok, 1} ->
-          # update
-          {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} =
-            Redix.pipeline(r, [
-              ["MULTI"],
-              ["HINCRBY", redis_key, "count", 1],
-              ["HSET", redis_key, "updated", now],
-              ["EXEC"]
-            ])
-
-          {:ok, count}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-
+    result = do_count_hit(r, key, now, expiry)
     {:reply, result, state}
   end
 
@@ -211,6 +148,91 @@ defmodule Hammer.Backend.Redis do
       end
 
     {:reply, result, state}
+  end
+
+  defp do_count_hit(r, key, now, expiry, attempt \\ 1)
+
+  defp do_count_hit(_, _, _, _, attempt) when attempt > 2,
+    do: raise("Failed to count hit: too many attempts to create bucket.")
+
+  defp do_count_hit(r, key, now, expiry, attempt) do
+    redis_key = make_redis_key(key)
+
+    case Redix.command(r, ["EXISTS", redis_key]) do
+      {:ok, 0} ->
+        create_bucket(r, key, now, expiry, attempt)
+
+      {:ok, 1} ->
+        update_bucket(r, key, now)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp create_bucket(r, {bucket, id} = key, now, expiry, attempt) do
+    redis_key = make_redis_key(key)
+    bucket_set_key = make_bucket_set_key(id)
+
+    # Watch to ensure that another node hasn't created the bucket first.
+    {:ok, "OK"} = Redix.command(r, ["WATCH", bucket_set_key])
+
+    result =
+      Redix.pipeline(r, [
+        ["MULTI"],
+        [
+          "HMSET",
+          redis_key,
+          "bucket",
+          bucket,
+          "id",
+          id,
+          "count",
+          1,
+          "created",
+          now,
+          "updated",
+          now
+        ],
+        [
+          "SADD",
+          bucket_set_key,
+          redis_key
+        ],
+        [
+          "EXPIRE",
+          redis_key,
+          expiry
+        ],
+        [
+          "EXPIRE",
+          bucket_set_key,
+          expiry
+        ],
+        ["EXEC"]
+      ])
+
+    case result do
+      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]} ->
+        {:ok, 1}
+
+      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]} ->
+        do_count_hit(r, key, now, expiry, attempt + 1)
+    end
+  end
+
+  defp update_bucket(r, key, now) do
+    redis_key = make_redis_key(key)
+
+    {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} =
+      Redix.pipeline(r, [
+        ["MULTI"],
+        ["HINCRBY", redis_key, "count", 1],
+        ["HSET", redis_key, "updated", now],
+        ["EXEC"]
+      ])
+
+    {:ok, count}
   end
 
   defp make_redis_key({bucket, id}) do
