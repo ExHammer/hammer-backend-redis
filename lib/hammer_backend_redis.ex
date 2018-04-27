@@ -217,14 +217,15 @@ defmodule Hammer.Backend.Redis do
         ["EXEC"]
       ])
 
-    # TODO: handle -
-    #    {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]}
-    #    Already part of the bucket set
     case result do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]} ->
         {:ok, 1}
 
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]} ->
+        do_count_hit(r, key, now, expiry, attempt + 1)
+
+      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]} ->
+        # Already part of the set
         do_count_hit(r, key, now, expiry, attempt + 1)
     end
   end
