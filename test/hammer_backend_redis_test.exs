@@ -102,6 +102,7 @@ defmodule HammerBackendRedisTest do
 
       # First attempt.
       assert called(Redix.command(:_, ["WATCH", "Hammer:Redis:Buckets:one"]))
+
       assert called(
                Redix.pipeline(:_, [
                  ["MULTI"],
@@ -154,6 +155,7 @@ defmodule HammerBackendRedisTest do
 
   test "get_bucket", context do
     pid = context[:pid]
+
     with_mock Redix, command: fn _r, _c -> {:ok, [1, "one", "2", "3", "4"]} end do
       assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
 
