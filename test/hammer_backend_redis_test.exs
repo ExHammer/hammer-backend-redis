@@ -198,8 +198,10 @@ defmodule HammerBackendRedisTest do
 
       assert called(
                Redix.pipeline(:_, [
+                 ["MULTI"],
                  ["DEL", "a", "b"],
-                 ["DEL", "Hammer:Redis:Buckets:one"]
+                 ["DEL", "Hammer:Redis:Buckets:one"],
+                 ["EXEC"]
                ])
              )
     end

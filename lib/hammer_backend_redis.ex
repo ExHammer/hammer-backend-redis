@@ -140,7 +140,11 @@ defmodule Hammer.Backend.Redis do
           {:ok, 0}
 
         {:ok, keys} ->
-          {:ok, [count_deleted, _]} = Redix.pipeline(r, [["DEL" | keys], ["DEL", bucket_set_key]])
+          {:ok, [count_deleted, _]} = Redix.pipeline(r, [
+              ["MULTI"],
+              ["DEL" | keys], ["DEL", bucket_set_key]
+              ["EXEC"],
+            ])
           {:ok, count_deleted}
 
         {:error, reason} ->
