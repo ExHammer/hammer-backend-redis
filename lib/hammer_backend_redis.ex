@@ -180,6 +180,7 @@ defmodule Hammer.Backend.Redis do
 
     # Watch to ensure that another node hasn't created the bucket first.
     {:ok, "OK"} = Redix.command(r, ["WATCH", bucket_set_key])
+    {:ok, "OK"} = Redix.command(r, ["WATCH", redis_key])
 
     result =
       Redix.pipeline(r, [
@@ -216,6 +217,9 @@ defmodule Hammer.Backend.Redis do
         ["EXEC"]
       ])
 
+    # TODO: handle -
+    #    {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]}
+    #    Already part of the bucket set
     case result do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]} ->
         {:ok, 1}
