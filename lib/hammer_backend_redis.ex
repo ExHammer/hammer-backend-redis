@@ -161,6 +161,11 @@ defmodule Hammer.Backend.Redis do
 
   defp do_count_hit(r, key, now, expiry, attempt) do
     redis_key = make_redis_key(key)
+    bucket_set_key = make_bucket_set_key(id)
+
+    # Watch to ensure that another node hasn't created the bucket first.
+    {:ok, "OK"} = Redix.command(r, ["WATCH", bucket_set_key])
+    {:ok, "OK"} = Redix.command(r, ["WATCH", redis_key])
 
     case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
@@ -177,10 +182,6 @@ defmodule Hammer.Backend.Redis do
   defp create_bucket(r, {bucket, id} = key, now, expiry, attempt) do
     redis_key = make_redis_key(key)
     bucket_set_key = make_bucket_set_key(id)
-
-    # Watch to ensure that another node hasn't created the bucket first.
-    {:ok, "OK"} = Redix.command(r, ["WATCH", bucket_set_key])
-    {:ok, "OK"} = Redix.command(r, ["WATCH", redis_key])
 
     result =
       Redix.pipeline(r, [
