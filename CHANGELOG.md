@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.2
+
+### Fixed
+
+- Fixed race-condition, really this time
+  (https://github.com/ExHammer/hammer-backend-redis/issues/11)
+
+
 ## 4.0.1
 
 ### Fixed

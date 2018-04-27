@@ -13,7 +13,7 @@ defmodule HammerBackendRedis.Mixfile do
       ],
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
-      version: "4.0.1",
+      version: "4.0.2",
       elixir: "~> 1.6",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
