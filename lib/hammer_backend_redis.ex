@@ -229,6 +229,10 @@ defmodule Hammer.Backend.Redis do
 
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]} ->
         # Already part of the set
+        # Pause for a random short interval before retrying
+        (:rand.uniform() * 500)
+        |> round()
+        |> :timer.sleep()
         do_count_hit(r, key, now, expiry, attempt + 1)
     end
   end
