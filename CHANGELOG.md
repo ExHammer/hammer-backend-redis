@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.3
+
+### Fixed
+
+- Fix a rare crash, again related to race-conditions
+  (https://github.com/ExHammer/hammer-backend-redis/issues/11#issuecomment-387202359)
+
 ## 4.0.2
 
 ### Fixed
