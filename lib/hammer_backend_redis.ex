@@ -59,7 +59,22 @@ defmodule Hammer.Backend.Redis do
           {:ok, count :: integer}
           | {:error, reason :: any}
   def count_hit(pid, key, now) do
-    GenServer.call(pid, {:count_hit, key, now})
+    GenServer.call(pid, {:count_hit, key, now, 1})
+  end
+
+  @doc """
+  Record a hit in the bucket identified by `key`, with a custom increment
+  """
+  @spec count_hit(
+    pid :: pid(),
+    key :: bucket_key,
+    now :: integer,
+    increment :: integer
+  ) ::
+  {:ok, count :: integer}
+  | {:error, reason :: any}
+  def count_hit(pid, key, now, increment) do
+    GenServer.call(pid, {:count_hit, key, now, increment})
   end
 
   @doc """
@@ -102,10 +117,10 @@ defmodule Hammer.Backend.Redis do
     {:stop, :normal, :ok, state}
   end
 
-  def handle_call({:count_hit, key, now}, _from, %{redix: r} = state) do
+  def handle_call({:count_hit, key, now, increment}, _from, %{redix: r} = state) do
     expiry = get_expiry(state)
 
-    result = do_count_hit(r, key, now, expiry)
+    result = do_count_hit(r, key, now, increment, expiry)
     {:reply, result, state}
   end
 
@@ -157,27 +172,27 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
-  defp do_count_hit(r, key, now, expiry, attempt \\ 1)
+  defp do_count_hit(r, key, now, increment, expiry, attempt \\ 1)
 
-  defp do_count_hit(_, _, _, _, attempt) when attempt > 3,
+  defp do_count_hit(_, _, _, _, _, attempt) when attempt > 3,
     do: raise("Failed to count hit: too many attempts to create bucket.")
 
-  defp do_count_hit(r, key, now, expiry, attempt) do
+  defp do_count_hit(r, key, now, increment, expiry, attempt) do
     redis_key = make_redis_key(key)
 
     case Redix.command(r, ["EXISTS", redis_key]) do
       {:ok, 0} ->
-        create_bucket(r, key, now, expiry, attempt)
+        create_bucket(r, key, now, increment, expiry, attempt)
 
       {:ok, 1} ->
-        update_bucket(r, key, now)
+        update_bucket(r, key, now, increment)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp create_bucket(r, {bucket, id} = key, now, expiry, attempt) do
+  defp create_bucket(r, {bucket, id} = key, now, increment, expiry, attempt) do
     redis_key = make_redis_key(key)
     bucket_set_key = make_bucket_set_key(id)
 
@@ -196,7 +211,7 @@ defmodule Hammer.Backend.Redis do
           "id",
           id,
           "count",
-          1,
+          increment,
           "created",
           now,
           "updated",
@@ -225,7 +240,7 @@ defmodule Hammer.Backend.Redis do
         {:ok, 1}
 
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]} ->
-        do_count_hit(r, key, now, expiry, attempt + 1)
+        do_count_hit(r, key, now, increment, expiry, attempt + 1)
 
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]} ->
         # Already part of the set
@@ -233,17 +248,17 @@ defmodule Hammer.Backend.Redis do
         (:rand.uniform() * 500)
         |> round()
         |> :timer.sleep()
-        do_count_hit(r, key, now, expiry, attempt + 1)
+        do_count_hit(r, key, now, increment, expiry, attempt + 1)
     end
   end
 
-  defp update_bucket(r, key, now) do
+  defp update_bucket(r, key, now, increment) do
     redis_key = make_redis_key(key)
 
     {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} =
       Redix.pipeline(r, [
         ["MULTI"],
-        ["HINCRBY", redis_key, "count", 1],
+        ["HINCRBY", redis_key, "count", increment],
         ["HSET", redis_key, "updated", now],
         ["EXEC"]
       ])

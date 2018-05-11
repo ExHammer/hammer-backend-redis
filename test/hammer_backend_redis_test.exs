@@ -61,6 +61,58 @@ defmodule HammerBackendRedisTest do
     end
   end
 
+  test "count_hit, first, with custom increment", context do
+    pid = context[:pid]
+
+    with_mock Redix,
+      command: fn
+        _r, ["WATCH", _] -> {:ok, "OK"}
+        _r, ["EXISTS", _] -> {:ok, 0}
+      end,
+      pipeline: fn _r, _c ->
+        {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
+      end do
+      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+
+      assert called(
+               Redix.pipeline(:_, [
+                 ["MULTI"],
+                 [
+                   "HMSET",
+                   "Hammer:Redis:one:1",
+                   "bucket",
+                   1,
+                   "id",
+                   "one",
+                   "count",
+                   21, # Increment
+                   "created",
+                   123,
+                   "updated",
+                   123
+                 ],
+                 [
+                   "SADD",
+                   "Hammer:Redis:Buckets:one",
+                   "Hammer:Redis:one:1"
+                 ],
+                 [
+                   "EXPIRE",
+                   "Hammer:Redis:one:1",
+                   61
+                 ],
+                 [
+                   "EXPIRE",
+                   "Hammer:Redis:Buckets:one",
+                   61
+                 ],
+                 ["EXEC"]
+               ])
+             )
+    end
+  end
+
   test "count_hit, after", context do
     pid = context[:pid]
 
@@ -78,6 +130,26 @@ defmodule HammerBackendRedisTest do
                  ["EXEC"]
                ])
              )
+    end
+  end
+
+  test "count_hit, after, with custom increment", context do
+    pid = context[:pid]
+
+    with_mock Redix,
+      command: fn _r, _c -> {:ok, 1} end,
+      pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
+      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+
+      assert called(
+        Redix.pipeline(:_, [
+              ["MULTI"],
+              ["HINCRBY", "Hammer:Redis:one:1", "count", 21], # Increment
+              ["HSET", "Hammer:Redis:one:1", "updated", 123],
+              ["EXEC"]
+            ])
+      )
     end
   end
 
