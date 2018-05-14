@@ -43,3 +43,9 @@ See the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html) for more.
 ## Documentation
 
 On hexdocs: [https://hexdocs.pm/hammer_backend_redis/](https://hexdocs.pm/hammer_backend_redis/)
+
+
+## Getting Help
+
+If you're having trouble, either open an issue on this repo, or reach out to the maintainers ([@shanekilkelly](https://twitter.com/shanekilkelly)) on Twitter.
+
