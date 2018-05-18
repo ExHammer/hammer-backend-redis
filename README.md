@@ -15,8 +15,8 @@ can be installed by adding `hammer_backend_redis` to your list of dependencies i
 
 ```elixir
 def deps do
-  [{:hammer_backend_redis, "~> 4.0"},
-   {:hammer, "~> 4.0"}]
+  [{:hammer_backend_redis, "~> 5.0"},
+   {:hammer, "~> 5.0"}]
 end
 ```
 
@@ -48,4 +48,3 @@ On hexdocs: [https://hexdocs.pm/hammer_backend_redis/](https://hexdocs.pm/hammer
 ## Getting Help
 
 If you're having trouble, either open an issue on this repo, or reach out to the maintainers ([@shanekilkelly](https://twitter.com/shanekilkelly)) on Twitter.
-
