@@ -86,7 +86,8 @@ defmodule HammerBackendRedisTest do
                    "id",
                    "one",
                    "count",
-                   21, # Increment
+                   # Increment
+                   21,
                    "created",
                    123,
                    "updated",
@@ -143,13 +144,14 @@ defmodule HammerBackendRedisTest do
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
-        Redix.pipeline(:_, [
-              ["MULTI"],
-              ["HINCRBY", "Hammer:Redis:one:1", "count", 21], # Increment
-              ["HSET", "Hammer:Redis:one:1", "updated", 123],
-              ["EXEC"]
-            ])
-      )
+               Redix.pipeline(:_, [
+                 ["MULTI"],
+                 # Increment
+                 ["HINCRBY", "Hammer:Redis:one:1", "count", 21],
+                 ["HSET", "Hammer:Redis:one:1", "updated", 123],
+                 ["EXEC"]
+               ])
+             )
     end
   end
 

@@ -13,7 +13,7 @@ defmodule HammerBackendRedis.Mixfile do
       ],
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
-      version: "5.0.0",
+      version: "6.0.0-rc1",
       elixir: "~> 1.6",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
@@ -48,8 +48,8 @@ defmodule HammerBackendRedis.Mixfile do
   # Type "mix help deps" for more examples and options
   defp deps do
     [
-      {:redix, "~> 0.7"},
-      {:hammer, "5.0.0"},
+      {:redix, "~> 0.8"},
+      {:hammer, "6.0.0-rc1"},
       {:mock, "~> 0.2.0", only: :test},
       {:ex_doc, "~> 0.16", only: :dev},
       {:dialyxir, "~> 0.5", only: [:dev], runtime: false},

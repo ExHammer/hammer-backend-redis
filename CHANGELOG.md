@@ -1,5 +1,19 @@
 # Changelog
 
+
+## 6.0.0
+
+### Changed
+
+- Raise an error if `expiry_ms` is not configured explicitely
+- Update the `redix` dependency to `~> 0.8`
+
+
+### Fixed
+
+- Actually honor `:redis_config`, as is claimed in the documentation
+
+
 ## 4.0.3
 
 ### Fixed

@@ -66,13 +66,13 @@ defmodule Hammer.Backend.Redis do
   Record a hit in the bucket identified by `key`, with a custom increment
   """
   @spec count_hit(
-    pid :: pid(),
-    key :: bucket_key,
-    now :: integer,
-    increment :: integer
-  ) ::
-  {:ok, count :: integer}
-  | {:error, reason :: any}
+          pid :: pid(),
+          key :: bucket_key,
+          now :: integer,
+          increment :: integer
+        ) ::
+          {:ok, count :: integer}
+          | {:error, reason :: any}
   def count_hit(pid, key, now, increment) do
     GenServer.call(pid, {:count_hit, key, now, increment})
   end
@@ -107,8 +107,19 @@ defmodule Hammer.Backend.Redis do
   ## GenServer Callbacks
 
   def init(args) do
-    expiry_ms = Keyword.get(args, :expiry_ms, 60_000 * 60 * 2)
-    redix_config = Keyword.get(args, :redix_config, [])
+    expiry_ms = Keyword.get(args, :expiry_ms)
+
+    if !expiry_ms do
+      raise RuntimeError, "Missing required config: expiry_ms"
+    end
+
+    redix_config =
+      Keyword.get(
+        args,
+        :redix_config,
+        Keyword.get(args, :redis_config, [])
+      )
+
     {:ok, redix} = Redix.start_link(redix_config)
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
@@ -248,6 +259,7 @@ defmodule Hammer.Backend.Redis do
         (:rand.uniform() * 500)
         |> round()
         |> :timer.sleep()
+
         do_count_hit(r, key, now, increment, expiry, attempt + 1)
     end
   end
