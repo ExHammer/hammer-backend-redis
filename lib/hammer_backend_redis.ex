@@ -14,7 +14,7 @@ defmodule Hammer.Backend.Redis do
   Options are:
 
   - `expiry_ms`: Expiry time of buckets in milliseconds,
-    used to set TTL on Redis keys
+    used to set TTL on Redis keys. This configuration is mandatory.
   - `redix_config`: Keyword list of options to the `Redix` redis client,
     also aliased to `redis_config`
   """
