@@ -120,7 +120,14 @@ defmodule Hammer.Backend.Redis do
         Keyword.get(args, :redis_config, [])
       )
 
-    {:ok, redix} = Redix.start_link(redix_config)
+    redis_url = Keyword.get(args, :redis_url, nil)
+
+    {:ok, redix} =
+      if is_binary(redis_url) && byte_size(redis_url) > 0 do
+        Redix.start_link(redis_url, redix_config)
+      else
+        Redix.start_link(redix_config)
+      end
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 
