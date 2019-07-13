@@ -128,6 +128,7 @@ defmodule Hammer.Backend.Redis do
       else
         Redix.start_link(redix_config)
       end
+
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 
