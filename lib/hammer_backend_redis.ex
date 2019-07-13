@@ -17,6 +17,8 @@ defmodule Hammer.Backend.Redis do
     used to set TTL on Redis keys. This configuration is mandatory.
   - `redix_config`: Keyword list of options to the `Redix` redis client,
     also aliased to `redis_config`
+  - `redis_url`: String url of redis server to connect to
+    (optional, invokes Redix.start_link/2)
   """
 
   @type bucket_key :: {bucket :: integer, id :: String.t()}
