@@ -1,5 +1,19 @@
 # Changelog
 
+## 6.0.1
+
+### Added
+
+- Accept an optional `redis_url` option
+
+### Changed
+
+- Updated dependencies in test environment (thanks to @ono, https://github.com/ExHammer/hammer-backend-redis/pull/14)
+
+### Fixed
+
+- Fixed a crash in `delete_buckets` (thanks to @ono, https://github.com/ExHammer/hammer-backend-redis/pull/15)
+
 
 ## 6.0.0
 
