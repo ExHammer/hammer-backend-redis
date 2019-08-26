@@ -72,7 +72,7 @@ defmodule HammerBackendRedisTest do
       pipeline: fn _r, _c ->
         {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
       end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+      assert {:ok, 21} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(

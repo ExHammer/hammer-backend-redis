@@ -258,7 +258,7 @@ defmodule Hammer.Backend.Redis do
 
     case result do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]} ->
-        {:ok, 1}
+        {:ok, increment}
 
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]} ->
         do_count_hit(r, key, now, increment, expiry, attempt + 1)
