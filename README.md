@@ -15,7 +15,7 @@ can be installed by adding `hammer_backend_redis` to your list of dependencies i
 
 ```elixir
 def deps do
-  [{:hammer_backend_redis, "~> 6.0"},
+  [{:hammer_backend_redis, "~> 6.1"},
    {:hammer, "~> 6.0"}]
 end
 ```

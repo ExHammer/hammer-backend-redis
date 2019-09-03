@@ -1,5 +1,12 @@
 # Changelog
 
+## 6.1.0
+
+### Changed
+
+- Return actual count upon bucket creation (thanks to @davelively14, https://github.com/ExHammer/hammer-backend-redis/pull/16)
+
+
 ## 6.0.1
 
 ### Added
