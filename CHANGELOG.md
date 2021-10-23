@@ -83,7 +83,7 @@
 
 ### Changed
 
-- `hammer_backend_redis` now explicitely depends on `hammer`
+- `hammer_backend_redis` now explicitly depends on `hammer`
 - Implement the `Hammer.Backend` behaviour
 - Alias `redix_config` to `redis_config` in the config list, for convenience
 
