@@ -1,7 +1,6 @@
 # This file is responsible for configuring your application
 # and its dependencies with the aid of the Mix.Config module.
-use Mix.Config
-
+import Config
 
 config :hammer,
   backend: {Hammer.Backend.Redis, [expiry_ms: 60_000 * 60 * 2,
