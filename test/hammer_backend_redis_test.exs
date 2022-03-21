@@ -227,6 +227,21 @@ defmodule HammerBackendRedisTest do
     :ok = Agent.stop(agent)
   end
 
+  test "count_hit, too many attempts when trying to create bucket", context do
+    pid = context[:pid]
+
+    with_mock Redix,
+      command: fn
+        _r, ["WATCH", _] -> {:ok, "OK"}
+        _r, ["EXISTS", _] -> {:ok, 0}
+      end,
+      pipeline: fn _r, _c ->
+        {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]}
+      end do
+      assert {:error, :count_hit_too_many_attemps} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+    end
+  end
+
   test "get_bucket", context do
     pid = context[:pid]
 
