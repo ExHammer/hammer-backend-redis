@@ -196,7 +196,7 @@ defmodule Hammer.Backend.Redis do
   defp do_count_hit(r, key, now, increment, expiry, attempt \\ 1)
 
   defp do_count_hit(_, _, _, _, _, attempt) when attempt > 3,
-    do: raise("Failed to count hit: too many attempts to create bucket.")
+    do: {:error, :count_hit_too_many_attemps}
 
   defp do_count_hit(r, key, now, increment, expiry, attempt) do
     redis_key = make_redis_key(key)
