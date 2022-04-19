@@ -1,285 +1,99 @@
 defmodule HammerBackendRedisTest do
   use ExUnit.Case
-  import Mock
 
-  setup _context do
-    with_mock Redix, start_link: fn _c -> {:ok, 1} end do
-      {:ok, pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
-      {:ok, [pid: pid]}
-    end
+  setup do
+    {:ok, pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
+    %{redix: redix} = :sys.get_state(pid)
+
+    assert {:ok, "OK"} = Redix.command(redix, ["FLUSHALL"])
+    {:ok, [pid: pid, redix: redix]}
   end
 
-  test "count_hit, first", context do
-    pid = context[:pid]
+  test "count_hit, insert", %{pid: pid, redix: redix} do
+    bucket = 1
+    id = "one"
+    bucket_key = {bucket, id}
+    now = 123
+    now_str = now |> Integer.to_string()
 
-    with_mock Redix,
-      command: fn
-        _r, ["WATCH", _] -> {:ok, "OK"}
-        _r, ["EXISTS", _] -> {:ok, 0}
-      end,
-      pipeline: fn _r, _c ->
-        {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
-      end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
-      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+    assert {:ok, 0} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, bucket_key, now)
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
 
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 [
-                   "HMSET",
-                   "Hammer:Redis:one:1",
-                   "bucket",
-                   1,
-                   "id",
-                   "one",
-                   "count",
-                   1,
-                   "created",
-                   123,
-                   "updated",
-                   123
-                 ],
-                 [
-                   "SADD",
-                   "Hammer:Redis:Buckets:one",
-                   "Hammer:Redis:one:1"
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:one:1",
-                   61
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:Buckets:one",
-                   61
-                 ],
-                 ["EXEC"]
-               ])
-             )
-    end
+    assert {:ok, ["count", "1", "created", ^now_str, "updated", ^now_str]} =
+             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
   end
 
-  test "count_hit, first, with custom increment", context do
-    pid = context[:pid]
+  test "count_hit, insert, with custom increment", %{pid: pid, redix: redix} do
+    bucket = 1
+    id = "one"
+    bucket_key = {bucket, id}
+    now = 123
+    now_str = now |> Integer.to_string()
+    inc = Enum.random(1..100)
+    inc_str = inc |> Integer.to_string()
 
-    with_mock Redix,
-      command: fn
-        _r, ["WATCH", _] -> {:ok, "OK"}
-        _r, ["EXISTS", _] -> {:ok, 0}
-      end,
-      pipeline: fn _r, _c ->
-        {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
-      end do
-      assert {:ok, 21} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
-      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+    assert {:ok, inc} == Hammer.Backend.Redis.count_hit(pid, bucket_key, now, inc)
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
 
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 [
-                   "HMSET",
-                   "Hammer:Redis:one:1",
-                   "bucket",
-                   1,
-                   "id",
-                   "one",
-                   "count",
-                   # Increment
-                   21,
-                   "created",
-                   123,
-                   "updated",
-                   123
-                 ],
-                 [
-                   "SADD",
-                   "Hammer:Redis:Buckets:one",
-                   "Hammer:Redis:one:1"
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:one:1",
-                   61
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:Buckets:one",
-                   61
-                 ],
-                 ["EXEC"]
-               ])
-             )
-    end
+    assert {:ok, ["count", ^inc_str, "created", ^now_str, "updated", ^now_str]} =
+             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
   end
 
-  test "count_hit, after", context do
-    pid = context[:pid]
+  test "count_hit, update", %{pid: pid, redix: redix} do
+    # 1. set-up
+    bucket = 1
+    id = "one"
+    bucket_key = {bucket, id}
+    now_before = 123
+    now_before_str = now_before |> Integer.to_string()
+    now_after = 456
+    now_after_str = now_after |> Integer.to_string()
 
-    with_mock Redix,
-      command: fn _r, _c -> {:ok, 1} end,
-      pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
-      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
-      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+    assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, bucket_key, now_before)
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
 
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
-                 ["HSET", "Hammer:Redis:one:1", "updated", 123],
-                 ["EXEC"]
-               ])
-             )
-    end
+    # 2. function call under test: count == 2
+    assert {:ok, 2} == Hammer.Backend.Redis.count_hit(pid, bucket_key, now_after)
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+
+    assert {:ok, ["count", "2", "created", ^now_before_str, "updated", ^now_after_str]} =
+             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
   end
 
-  test "count_hit, after, with custom increment", context do
-    pid = context[:pid]
+  test "get_bucket", %{pid: pid} do
+    # 1. set-up
+    bucket = 1
+    id = "one"
+    bucket_key = {bucket, id}
 
-    with_mock Redix,
-      command: fn _r, _c -> {:ok, 1} end,
-      pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
-      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
-      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
+    now_before = 123
+    inc_before = Enum.random(1..100)
 
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 # Increment
-                 ["HINCRBY", "Hammer:Redis:one:1", "count", 21],
-                 ["HSET", "Hammer:Redis:one:1", "updated", 123],
-                 ["EXEC"]
-               ])
-             )
-    end
+    now_after = 456
+    inc_after = Enum.random(1..100)
+
+    inc_total = inc_before + inc_after
+
+    assert {:ok, ^inc_before} =
+             Hammer.Backend.Redis.count_hit(pid, bucket_key, now_before, inc_before)
+
+    assert {:ok, ^inc_total} =
+             Hammer.Backend.Redis.count_hit(pid, bucket_key, now_after, inc_after)
+
+    # 2. function call under test
+    assert {:ok, {^bucket_key, ^inc_total, ^now_before, ^now_after}} =
+             Hammer.Backend.Redis.get_bucket(pid, bucket_key)
   end
 
-  test "count_hit, handles race condition", context do
-    pid = context[:pid]
-    {:ok, agent} = Agent.start_link(fn -> 0 end)
-
-    with_mock Redix,
-      command: fn
-        _r, ["WATCH", _] -> {:ok, "OK"}
-        _r, ["EXISTS", _] -> {:ok, Agent.get_and_update(agent, fn c -> {c, 1} end)}
-      end,
-      pipeline: fn
-        _r, args when length(args) == 6 ->
-          {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]}
-
-        _r, args when length(args) == 4 ->
-          {:ok, ["OK", "QUEUED", "QUEUED", [1, 0]]}
-      end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
-      assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
-
-      # First attempt.
-      assert called(Redix.command(:_, ["WATCH", "Hammer:Redis:Buckets:one"]))
-
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 [
-                   "HMSET",
-                   "Hammer:Redis:one:1",
-                   "bucket",
-                   1,
-                   "id",
-                   "one",
-                   "count",
-                   1,
-                   "created",
-                   123,
-                   "updated",
-                   123
-                 ],
-                 [
-                   "SADD",
-                   "Hammer:Redis:Buckets:one",
-                   "Hammer:Redis:one:1"
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:one:1",
-                   61
-                 ],
-                 [
-                   "EXPIRE",
-                   "Hammer:Redis:Buckets:one",
-                   61
-                 ],
-                 ["EXEC"]
-               ])
-             )
-
-      # Second attempt.
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 ["HINCRBY", "Hammer:Redis:one:1", "count", 1],
-                 ["HSET", "Hammer:Redis:one:1", "updated", 123],
-                 ["EXEC"]
-               ])
-             )
+    test "delete buckets", %{pid: pid} do
+      id = "one"
+      assert_raise RuntimeError, "Delete operation is not supported", fn ->
+        Hammer.Backend.Redis.delete_buckets(pid, id)
+      end
     end
 
-    :ok = Agent.stop(agent)
-  end
-
-  test "get_bucket", context do
-    pid = context[:pid]
-
-    with_mock Redix, command: fn _r, _c -> {:ok, [1, "one", "2", "3", "4"]} end do
-      assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
-
-      assert called(
-               Redix.command(:_, [
-                 "HMGET",
-                 "Hammer:Redis:one:1",
-                 "bucket",
-                 "id",
-                 "count",
-                 "created",
-                 "updated"
-               ])
-             )
-    end
-
-    with_mock Redix, command: fn _r, _c -> {:ok, [nil, nil, nil, nil, nil]} end do
-      assert {:ok, nil} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
-
-      assert called(
-               Redix.command(:_, [
-                 "HMGET",
-                 "Hammer:Redis:one:1",
-                 "bucket",
-                 "id",
-                 "count",
-                 "created",
-                 "updated"
-               ])
-             )
-    end
-  end
-
-  test "delete buckets", context do
-    pid = context[:pid]
-
-    with_mock Redix,
-      command: fn _r, _c -> {:ok, ["a", "b"]} end,
-      pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [2, 2]]} end do
-      assert {:ok, 2} = Hammer.Backend.Redis.delete_buckets(pid, "one")
-      assert called(Redix.command(:_, ["SMEMBERS", "Hammer:Redis:Buckets:one"]))
-
-      assert called(
-               Redix.pipeline(:_, [
-                 ["MULTI"],
-                 ["DEL", "a", "b"],
-                 ["DEL", "Hammer:Redis:Buckets:one"],
-                 ["EXEC"]
-               ])
-             )
-    end
+  defp make_redis_key({bucket, id}) do
+    "Hammer:Redis:#{id}:#{bucket}"
   end
 end

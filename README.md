@@ -44,6 +44,10 @@ See the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html) for more.
 
 On hexdocs: [https://hexdocs.pm/hammer_backend_redis/](https://hexdocs.pm/hammer_backend_redis/)
 
+## Run tests locally
+
+You need a running Redis instance. One can be started locally using `docker-compose up -d`.
+Export `$HAMMER_REDIS_URI` before running the tests. That variable should have the form `redis://HOST:PORT` (see https://hexdocs.pm/redix/Redix.html#start_link/1-using-a-redis-uri).
 
 ## Getting Help
 
