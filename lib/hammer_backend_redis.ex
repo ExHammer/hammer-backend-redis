@@ -102,8 +102,9 @@ defmodule Hammer.Backend.Redis do
         ) ::
           {:ok, count_deleted :: integer}
           | {:error, reason :: any}
-  def delete_buckets(_pid, _id) do
-    raise "Delete operation is not supported"
+  def delete_buckets(pid, id) do
+    delete_buckets_timeout = GenServer.call(pid, {:get_delete_buckets_timeout})
+    GenServer.call(pid, {:delete_buckets, id}, delete_buckets_timeout)
   end
 
   ## GenServer Callbacks
@@ -122,7 +123,7 @@ defmodule Hammer.Backend.Redis do
         Keyword.get(args, :redis_config, [])
       )
 
-    redis_url = System.get_env("HAMMER_REDIS_URI") || Keyword.get(args, :redis_url, nil)
+    redis_url = Keyword.get(args, :redis_url, nil)
 
     {:ok, redix} =
       if is_binary(redis_url) && byte_size(redis_url) > 0 do
@@ -131,7 +132,9 @@ defmodule Hammer.Backend.Redis do
         Redix.start_link(redix_config)
       end
 
-    {:ok, %{redix: redix, expiry_ms: expiry_ms}}
+    delete_buckets_timeout = Keyword.get(args, :delete_buckets_timeout, 5000)
+
+    {:ok, %{redix: redix, expiry_ms: expiry_ms, delete_buckets_timeout: delete_buckets_timeout}}
   end
 
   def handle_call(:stop, _from, state) do
@@ -165,6 +168,38 @@ defmodule Hammer.Backend.Redis do
       end
 
     {:reply, result, state}
+  end
+
+  def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
+    redis_key_pattern = make_redis_key_pattern(id)
+    result = do_delete_buckets(r, redis_key_pattern, 0, 0)
+
+    {:reply, result, state}
+  end
+
+  def handle_call({:get_delete_buckets_timeout}, _from, %{delete_buckets_timeout: delete_buckets_timeout} = state) do
+    {:reply, delete_buckets_timeout, state}
+  end
+
+  defp do_delete_buckets(r, redis_key_pattern, cursor, count_deleted) do
+    case Redix.command(r, ["SCAN", cursor, "MATCH", redis_key_pattern]) do
+      {:ok, ["0", []]} ->
+        {:ok, count_deleted}
+
+      {:ok, [next_cursor, []]} ->
+        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted)
+
+      {:ok, ["0", keys]} ->
+        {:ok, deleted} = Redix.command(r, ["DEL" | keys])
+        {:ok, deleted + count_deleted}
+
+      {:ok, [next_cursor, keys]} ->
+        {:ok, deleted} = Redix.command(r, ["DEL" | keys])
+        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted + deleted)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # we are using the first method described (called bucketing)
@@ -211,6 +246,10 @@ defmodule Hammer.Backend.Redis do
 
   defp make_redis_key({bucket, id}) do
     "Hammer:Redis:#{id}:#{bucket}"
+  end
+
+  defp make_redis_key_pattern(id) do
+    "Hammer:Redis:#{id}:*"
   end
 
   defp get_expiry(state) do

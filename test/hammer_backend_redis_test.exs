@@ -2,7 +2,8 @@ defmodule HammerBackendRedisTest do
   use ExUnit.Case
 
   setup do
-    {:ok, pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
+    {Hammer.Backend.Redis, config} = Application.get_env(:hammer, :backend)
+    {:ok, pid} = Hammer.Backend.Redis.start_link(config)
     %{redix: redix} = :sys.get_state(pid)
 
     assert {:ok, "OK"} = Redix.command(redix, ["FLUSHALL"])
@@ -86,12 +87,66 @@ defmodule HammerBackendRedisTest do
              Hammer.Backend.Redis.get_bucket(pid, bucket_key)
   end
 
-    test "delete buckets", %{pid: pid} do
-      id = "one"
-      assert_raise RuntimeError, "Delete operation is not supported", fn ->
-        Hammer.Backend.Redis.delete_buckets(pid, id)
-      end
+  test "delete buckets", %{pid: pid, redix: redix} do
+    bucket = 1
+    id = "one"
+    bucket_key = {bucket, id}
+    now = 123
+
+    {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
+    assert {:ok, 1} = Hammer.Backend.Redis.delete_buckets(pid, id)
+    assert {:ok, []} = Redix.command(redix, ["KEYS", "*"])
+  end
+
+  test "delete buckets with no keys matching", %{pid: pid, redix: redix} do
+    id = "one"
+    now = 123
+
+    for bucket <- 1..10 do
+      bucket_key = {bucket, id}
+      {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
     end
+
+    assert {:ok, 0} = Hammer.Backend.Redis.delete_buckets(pid, "foobar")
+
+    # Previous keys remain untouched
+    {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
+    assert 10 == length(keys)
+  end
+
+  test "delete buckets when many buckets exist", %{pid: pid, redix: redix} do
+    id = "one"
+    now = 123
+
+    for bucket <- 1..1000 do
+      bucket_key = {bucket, id}
+      {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
+    end
+
+    assert {:ok, 1_000} = Hammer.Backend.Redis.delete_buckets(pid, id)
+    assert {:ok, []} = Redix.command(redix, ["KEYS", "*"])
+  end
+
+  test "delete buckets when scan returns empty list but valid cursor", %{pid: pid, redix: redix} do
+    # By writing only one key to the keyspace, most iterations of the SCAN call
+    # will return a valid cursor but an empty list. The valid cursor should
+    # make the delete_buckets call iterate until the intended key is found
+    now = 123
+    id = "one"
+    bucket_key = {1, id}
+    {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
+
+    another_id = "another"
+
+    for bucket <- 1..1000 do
+      bucket_key = {bucket, another_id}
+      {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
+    end
+
+    assert {:ok, 1} = Hammer.Backend.Redis.delete_buckets(pid, id)
+    {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
+    assert 1_000 == length(keys)
+  end
 
   defp make_redis_key({bucket, id}) do
     "Hammer:Redis:#{id}:#{bucket}"
