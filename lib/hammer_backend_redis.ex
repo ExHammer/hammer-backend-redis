@@ -103,7 +103,8 @@ defmodule Hammer.Backend.Redis do
           {:ok, count_deleted :: integer}
           | {:error, reason :: any}
   def delete_buckets(pid, id) do
-    GenServer.call(pid, {:delete_buckets, id})
+    delete_buckets_timeout = GenServer.call(pid, {:get_delete_buckets_timeout})
+    GenServer.call(pid, {:delete_buckets, id}, delete_buckets_timeout)
   end
 
   ## GenServer Callbacks
@@ -131,7 +132,9 @@ defmodule Hammer.Backend.Redis do
         Redix.start_link(redix_config)
       end
 
-    {:ok, %{redix: redix, expiry_ms: expiry_ms}}
+    delete_buckets_timeout = Keyword.get(args, :delete_buckets_timeout, 5000)
+
+    {:ok, %{redix: redix, expiry_ms: expiry_ms, delete_buckets_timeout: delete_buckets_timeout}}
   end
 
   def handle_call(:stop, _from, state) do
@@ -147,14 +150,14 @@ defmodule Hammer.Backend.Redis do
 
   def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
     redis_key = make_redis_key(key)
-    command = ["HMGET", redis_key, "bucket", "id", "count", "created", "updated"]
+    command = ["HMGET", redis_key, "count", "created", "updated"]
 
     result =
       case Redix.command(r, command) do
-        {:ok, [nil, nil, nil, nil, nil]} ->
+        {:ok, [nil, nil, nil]} ->
           {:ok, nil}
 
-        {:ok, [_bucket, _id, count, created, updated]} ->
+        {:ok, [count, created, updated]} ->
           count = String.to_integer(count)
           created = String.to_integer(created)
           updated = String.to_integer(updated)
@@ -168,132 +171,85 @@ defmodule Hammer.Backend.Redis do
   end
 
   def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
-    bucket_set_key = make_bucket_set_key(id)
-
-    result =
-      case Redix.command(r, ["SMEMBERS", bucket_set_key]) do
-        {:ok, []} ->
-          {:ok, 0}
-
-        {:ok, keys} ->
-          {:ok, [_, _, _, [count_deleted, _]]} =
-            Redix.pipeline(r, [
-              ["MULTI"],
-              ["DEL" | keys],
-              ["DEL", bucket_set_key],
-              ["EXEC"]
-            ])
-
-          {:ok, count_deleted}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+    redis_key_pattern = make_redis_key_pattern(id)
+    result = do_delete_buckets(r, redis_key_pattern, 0, 0)
 
     {:reply, result, state}
   end
 
-  defp do_count_hit(r, key, now, increment, expiry, attempt \\ 1)
+  def handle_call({:get_delete_buckets_timeout}, _from, %{delete_buckets_timeout: delete_buckets_timeout} = state) do
+    {:reply, delete_buckets_timeout, state}
+  end
 
-  defp do_count_hit(_, _, _, _, _, attempt) when attempt > 3,
-    do: raise("Failed to count hit: too many attempts to create bucket.")
+  defp do_delete_buckets(r, redis_key_pattern, cursor, count_deleted) do
+    case Redix.command(r, ["SCAN", cursor, "MATCH", redis_key_pattern]) do
+      {:ok, ["0", []]} ->
+        {:ok, count_deleted}
 
-  defp do_count_hit(r, key, now, increment, expiry, attempt) do
-    redis_key = make_redis_key(key)
+      {:ok, [next_cursor, []]} ->
+        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted)
 
-    case Redix.command(r, ["EXISTS", redis_key]) do
-      {:ok, 0} ->
-        create_bucket(r, key, now, increment, expiry, attempt)
+      {:ok, ["0", keys]} ->
+        {:ok, deleted} = Redix.command(r, ["DEL" | keys])
+        {:ok, deleted + count_deleted}
 
-      {:ok, 1} ->
-        update_bucket(r, key, now, increment)
+      {:ok, [next_cursor, keys]} ->
+        {:ok, deleted} = Redix.command(r, ["DEL" | keys])
+        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted + deleted)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp create_bucket(r, {bucket, id} = key, now, increment, expiry, attempt) do
+  # we are using the first method described (called bucketing)
+  # in https://www.youtube.com/watch?v=CRGPbCbRTHA
+  # but we add the 'created' and 'updated' meta information fields.
+  defp do_count_hit(r, key, now, increment, expiry) do
     redis_key = make_redis_key(key)
-    bucket_set_key = make_bucket_set_key(id)
 
-    # Watch to ensure that another node hasn't created the bucket first.
-    {:ok, "OK"} = Redix.command(r, ["WATCH", bucket_set_key])
-    {:ok, "OK"} = Redix.command(r, ["WATCH", redis_key])
+    Redix.pipeline(r, [
+      ["MULTI"],
+      [
+        "HINCRBY",
+        redis_key,
+        "count",
+        increment
+      ],
+      [
+        "HSETNX",
+        redis_key,
+        "created",
+        now
+      ],
+      [
+        "HSET",
+        redis_key,
+        "updated",
+        now
+      ],
+      [
+        "EXPIRE",
+        redis_key,
+        expiry
+      ],
+      ["EXEC"]
+    ])
+    |> case do
+      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
+        {:ok, new_count}
 
-    result =
-      Redix.pipeline(r, [
-        ["MULTI"],
-        [
-          "HMSET",
-          redis_key,
-          "bucket",
-          bucket,
-          "id",
-          id,
-          "count",
-          increment,
-          "created",
-          now,
-          "updated",
-          now
-        ],
-        [
-          "SADD",
-          bucket_set_key,
-          redis_key
-        ],
-        [
-          "EXPIRE",
-          redis_key,
-          expiry
-        ],
-        [
-          "EXPIRE",
-          bucket_set_key,
-          expiry
-        ],
-        ["EXEC"]
-      ])
-
-    case result do
-      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]} ->
-        {:ok, increment}
-
-      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]} ->
-        do_count_hit(r, key, now, increment, expiry, attempt + 1)
-
-      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 0, 1, 1]]} ->
-        # Already part of the set
-        # Pause for a random short interval before retrying
-        (:rand.uniform() * 500)
-        |> round()
-        |> :timer.sleep()
-
-        do_count_hit(r, key, now, increment, expiry, attempt + 1)
+      {:error, reason} ->
+        {:error, reason}
     end
-  end
-
-  defp update_bucket(r, key, now, increment) do
-    redis_key = make_redis_key(key)
-
-    {:ok, ["OK", "QUEUED", "QUEUED", [count, 0]]} =
-      Redix.pipeline(r, [
-        ["MULTI"],
-        ["HINCRBY", redis_key, "count", increment],
-        ["HSET", redis_key, "updated", now],
-        ["EXEC"]
-      ])
-
-    {:ok, count}
   end
 
   defp make_redis_key({bucket, id}) do
     "Hammer:Redis:#{id}:#{bucket}"
   end
 
-  defp make_bucket_set_key(id) do
-    "Hammer:Redis:Buckets:#{id}"
+  defp make_redis_key_pattern(id) do
+    "Hammer:Redis:#{id}:*"
   end
 
   defp get_expiry(state) do
