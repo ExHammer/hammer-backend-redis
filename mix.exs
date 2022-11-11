@@ -13,19 +13,13 @@ defmodule HammerBackendRedis.Mixfile do
       ],
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
-      version: "6.1.0",
+      version: "6.1.1",
       elixir: "~> 1.12",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: [main: "frontpage", extras: ["doc_src/Frontpage.md"]],
-      test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ]
+      test_coverage: [summary: [threshold: 75]]
     ]
   end
 
@@ -49,11 +43,10 @@ defmodule HammerBackendRedis.Mixfile do
   defp deps do
     [
       {:redix, "~> 1.1"},
-      {:hammer, "6.0.0"},
+      {:hammer, "~> 6.0"},
       {:mock, "~> 0.3.7", only: :test},
       {:ex_doc, "~> 0.28", only: :dev},
-      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
-      {:excoveralls, "~> 0.14", only: :test}
+      {:dialyxir, "~> 1.1", only: [:dev], runtime: false}
     ]
   end
 end
