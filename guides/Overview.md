@@ -1,4 +1,6 @@
-# A Redis backend for the Hammer rate-limiter
+# Overview
+
+A Redis backend for the Hammer rate-limiter
 
 [Hammer](https://github.com/ExHammer/hammer) is a rate-limiter for
 the [Elixir](https://elixir-lang.org/) language. It's killer feature is a

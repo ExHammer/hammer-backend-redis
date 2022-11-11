@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.1.1 (2022-11-11)
+
+### Changed
+
+- package update and ownership transferred
+
 ## 6.1.0
 
 ### Changed
