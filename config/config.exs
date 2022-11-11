@@ -3,11 +3,14 @@
 import Config
 
 config :hammer,
-  backend: {Hammer.Backend.Redis, [
-    expiry_ms: 60_000 * 60 * 2,
-    delete_buckets_timeout: 5000,
-    redix_config: [host: "localhost", port: 6379]
-  ]}
+  backend:
+    {Hammer.Backend.Redis,
+     [
+       expiry_ms: 60_000 * 60 * 2,
+       delete_buckets_timeout: 5000,
+       redix_config: [host: "localhost", port: 6379]
+     ]}
+
 # This configuration is loaded before any dependency and is restricted
 # to this project. If another project depends on this project, this
 # file won't be loaded nor affect the parent project. For this reason,
@@ -33,6 +36,6 @@ config :hammer,
 # Configuration from the imported file will override the ones defined
 # here (which is why it is important to import them last).
 #
-if Mix.env == :test do
-  import_config "#{Mix.env}.exs"
+if Mix.env() == :test do
+  import_config "#{Mix.env()}.exs"
 end

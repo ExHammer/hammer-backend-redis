@@ -177,7 +177,11 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
-  def handle_call({:get_delete_buckets_timeout}, _from, %{delete_buckets_timeout: delete_buckets_timeout} = state) do
+  def handle_call(
+        {:get_delete_buckets_timeout},
+        _from,
+        %{delete_buckets_timeout: delete_buckets_timeout} = state
+      ) do
     {:reply, delete_buckets_timeout, state}
   end
 
