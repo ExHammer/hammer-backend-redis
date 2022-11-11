@@ -20,32 +20,37 @@ defmodule Hammer.Backend.Redis do
   - `redis_url`: String url of redis server to connect to
     (optional, invokes Redix.start_link/2)
   """
+  @behaviour Hammer.Backend
+
+  use GenServer
 
   @type bucket_key :: {bucket :: integer, id :: String.t()}
   @type bucket_info ::
           {key :: bucket_key, count :: integer, created :: integer, updated :: integer}
 
-  use GenServer
-  @behaviour Hammer.Backend
-
   ## Public API
 
+  @spec start :: :ignore | {:error, any} | {:ok, pid}
   def start do
     start([])
   end
 
+  @spec start(keyword()) :: :ignore | {:error, any} | {:ok, pid}
   def start(args) do
     GenServer.start(__MODULE__, args)
   end
 
+  @spec start_link() :: :ignore | {:error, any} | {:ok, pid}
   def start_link do
     start_link([])
   end
 
+  @spec start_link(keyword()) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec stop() :: any()
   def stop do
     GenServer.call(__MODULE__, :stop)
   end
@@ -108,6 +113,7 @@ defmodule Hammer.Backend.Redis do
 
   ## GenServer Callbacks
 
+  @impl GenServer
   def init(args) do
     expiry_ms = Keyword.get(args, :expiry_ms)
 
@@ -134,10 +140,12 @@ defmodule Hammer.Backend.Redis do
     {:ok, %{redix: redix, expiry_ms: expiry_ms}}
   end
 
+  @impl GenServer
   def handle_call(:stop, _from, state) do
     {:stop, :normal, :ok, state}
   end
 
+  @impl GenServer
   def handle_call({:count_hit, key, now, increment}, _from, %{redix: r} = state) do
     expiry = get_expiry(state)
 
@@ -145,6 +153,7 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
+  @impl GenServer
   def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
     redis_key = make_redis_key(key)
     command = ["HMGET", redis_key, "bucket", "id", "count", "created", "updated"]
@@ -167,6 +176,7 @@ defmodule Hammer.Backend.Redis do
     {:reply, result, state}
   end
 
+  @impl GenServer
   def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
     bucket_set_key = make_bucket_set_key(id)
 
@@ -196,7 +206,7 @@ defmodule Hammer.Backend.Redis do
   defp do_count_hit(r, key, now, increment, expiry, attempt \\ 1)
 
   defp do_count_hit(_, _, _, _, _, attempt) when attempt > 3,
-    do: raise("Failed to count hit: too many attempts to create bucket.")
+    do: {:error, :count_hit_too_many_attemps}
 
   defp do_count_hit(r, key, now, increment, expiry, attempt) do
     redis_key = make_redis_key(key)

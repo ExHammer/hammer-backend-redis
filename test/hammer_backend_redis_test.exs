@@ -1,10 +1,11 @@
 defmodule HammerBackendRedisTest do
   use ExUnit.Case
   import Mock
+  alias Hammer.Backend.Redis
 
   setup _context do
     with_mock Redix, start_link: fn _c -> {:ok, 1} end do
-      {:ok, pid} = Hammer.Backend.Redis.start_link(expiry_ms: 60_000)
+      {:ok, pid} = Redis.start_link(expiry_ms: 60_000)
       {:ok, [pid: pid]}
     end
   end
@@ -20,7 +21,7 @@ defmodule HammerBackendRedisTest do
       pipeline: fn _r, _c ->
         {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
       end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
+      assert {:ok, 1} == Redis.count_hit(pid, {1, "one"}, 123)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
@@ -72,7 +73,7 @@ defmodule HammerBackendRedisTest do
       pipeline: fn _r, _c ->
         {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", ["OK", 1, 1, 1]]}
       end do
-      assert {:ok, 21} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+      assert {:ok, 21} == Redis.count_hit(pid, {1, "one"}, 123, 21)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
@@ -120,7 +121,7 @@ defmodule HammerBackendRedisTest do
     with_mock Redix,
       command: fn _r, _c -> {:ok, 1} end,
       pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
-      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
+      assert {:ok, 42} == Redis.count_hit(pid, {1, "one"}, 123)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
@@ -140,7 +141,7 @@ defmodule HammerBackendRedisTest do
     with_mock Redix,
       command: fn _r, _c -> {:ok, 1} end,
       pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [42, 0]]} end do
-      assert {:ok, 42} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123, 21)
+      assert {:ok, 42} == Redis.count_hit(pid, {1, "one"}, 123, 21)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       assert called(
@@ -171,7 +172,7 @@ defmodule HammerBackendRedisTest do
         _r, args when length(args) == 4 ->
           {:ok, ["OK", "QUEUED", "QUEUED", [1, 0]]}
       end do
-      assert {:ok, 1} == Hammer.Backend.Redis.count_hit(pid, {1, "one"}, 123)
+      assert {:ok, 1} == Redis.count_hit(pid, {1, "one"}, 123)
       assert called(Redix.command(:_, ["EXISTS", "Hammer:Redis:one:1"]))
 
       # First attempt.
@@ -227,11 +228,27 @@ defmodule HammerBackendRedisTest do
     :ok = Agent.stop(agent)
   end
 
+  test "count_hit, too many attempts when trying to create bucket", context do
+    pid = context[:pid]
+
+    with_mock Redix,
+      command: fn
+        _r, ["WATCH", _] -> {:ok, "OK"}
+        _r, ["EXISTS", _] -> {:ok, 0}
+      end,
+      pipeline: fn _r, _c ->
+        {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", nil]}
+      end do
+      assert {:error, :count_hit_too_many_attemps} ==
+               Redis.count_hit(pid, {1, "one"}, 123, 21)
+    end
+  end
+
   test "get_bucket", context do
     pid = context[:pid]
 
     with_mock Redix, command: fn _r, _c -> {:ok, [1, "one", "2", "3", "4"]} end do
-      assert {:ok, {{1, "one"}, 2, 3, 4}} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
+      assert {:ok, {{1, "one"}, 2, 3, 4}} == Redis.get_bucket(pid, {1, "one"})
 
       assert called(
                Redix.command(:_, [
@@ -247,7 +264,7 @@ defmodule HammerBackendRedisTest do
     end
 
     with_mock Redix, command: fn _r, _c -> {:ok, [nil, nil, nil, nil, nil]} end do
-      assert {:ok, nil} == Hammer.Backend.Redis.get_bucket(pid, {1, "one"})
+      assert {:ok, nil} == Redis.get_bucket(pid, {1, "one"})
 
       assert called(
                Redix.command(:_, [
@@ -269,7 +286,7 @@ defmodule HammerBackendRedisTest do
     with_mock Redix,
       command: fn _r, _c -> {:ok, ["a", "b"]} end,
       pipeline: fn _r, _c -> {:ok, ["OK", "QUEUED", "QUEUED", [2, 2]]} end do
-      assert {:ok, 2} = Hammer.Backend.Redis.delete_buckets(pid, "one")
+      assert {:ok, 2} = Redis.delete_buckets(pid, "one")
       assert called(Redix.command(:_, ["SMEMBERS", "Hammer:Redis:Buckets:one"]))
 
       assert called(

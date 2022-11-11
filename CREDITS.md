@@ -1,4 +1,4 @@
-Credits in no special order
+Credits in no special order:
 
 - [June Kelly](https://github.com/JuneKelly)
 - [Kian-Meng Ang](https://github.com/kianmeng)
