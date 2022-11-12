@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     env:
       MIX_ENV: test
     strategy:
@@ -16,11 +16,18 @@ jobs:
       matrix:
         include:
           - pair:
-              elixir: 1.5.3
-              otp: 19.3.6.13
+              elixir: 1.12.3
+              otp: 23.3.4.18
+            lint: lint
+
           - pair:
               elixir: 1.13.4
-              otp: 25.0.4
+              otp: 24.3.4.6
+            lint: lint
+
+          - pair:
+              elixir: 1.14.1
+              otp: 25.1.2
             lint: lint
     steps:
       - uses: actions/checkout@v2
@@ -52,4 +59,7 @@ jobs:
       - run: mix compile --warnings-as-errors
         if: ${{ matrix.lint }}
 
-      - run: mix test
+      - run: mix test --warnings-as-errors
+
+      - run: mix credo
+        if: ${{ matrix.lint }}
