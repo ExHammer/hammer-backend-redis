@@ -7,10 +7,14 @@ on:
       - master
 
 jobs:
-  test:
+  setup:
     runs-on: ubuntu-latest
     env:
       MIX_ENV: test
+      # The hostname used to communicate with the Redis service container
+      REDIS_HOST: redis
+      # The default Redis port
+      REDIS_PORT: 6379
     services:
       redis:
         # Docker Hub image
@@ -44,29 +48,27 @@ jobs:
       #     path: |
       #       deps
       #       _build
-      #     key: ${{ runner.os }}-mix-${{matrix.elixir_version}}-${{matrix.otp_version}}-${{ hashFiles('**/mix.lock') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-mix-
+            # key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+            # restore-keys: |
+            #   deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
 
       - run: mix deps.get
 
       - run: mix format --check-formatted
-        if: ${{ matrix.lint }}
 
       - run: mix deps.unlock --check-unused
-        if: ${{ matrix.lint }}
 
       - run: mix deps.compile
 
       - run: mix compile --warnings-as-errors
-        if: ${{ matrix.lint }}
+
+      - run: mix credo --strict --format=oneline
 
       - run: mix test --warnings-as-errors
 
-      - run: mix credo
-        if: ${{ matrix.lint }}
 
   # publish:
+  #   needs: test
   #   runs-on: ubuntu-latest
   #   steps:
   #     - name: Check out
