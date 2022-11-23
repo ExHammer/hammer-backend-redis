@@ -13,8 +13,6 @@ jobs:
       MIX_ENV: test
       # The hostname used to communicate with the Redis service container
       REDIS_HOST: redis
-      # The default Redis port
-      REDIS_PORT: 6379
     services:
       redis:
         # Docker Hub image
@@ -63,6 +61,8 @@ jobs:
       - run: mix compile --warnings-as-errors
 
       - run: mix credo --strict --format=oneline
+
+      - run: echo "::debug::Set the Octocat ${{env.REDIS_HOST}}"
 
       - run: mix test --warnings-as-errors
 
