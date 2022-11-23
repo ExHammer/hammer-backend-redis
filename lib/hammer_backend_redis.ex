@@ -21,31 +21,36 @@ defmodule Hammer.Backend.Redis do
     (optional, invokes Redix.start_link/2)
   """
 
+  @behaviour Hammer.Backend
+
+  use GenServer
+
   @type bucket_key :: {bucket :: integer, id :: String.t()}
   @type bucket_info ::
           {key :: bucket_key, count :: integer, created :: integer, updated :: integer}
-
-  use GenServer
-  @behaviour Hammer.Backend
-
   ## Public API
 
+  @spec start :: :ignore | {:error, any} | {:ok, pid}
   def start do
     start([])
   end
 
+  @spec start(keyword()) :: :ignore | {:error, any} | {:ok, pid}
   def start(args) do
     GenServer.start(__MODULE__, args)
   end
 
+  @spec start_link :: :ignore | {:error, any} | {:ok, pid}
   def start_link do
     start_link([])
   end
 
+  @spec start_link(keyword()) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
+  @spec stop :: any
   def stop do
     GenServer.call(__MODULE__, :stop)
   end
@@ -109,6 +114,7 @@ defmodule Hammer.Backend.Redis do
 
   ## GenServer Callbacks
 
+  @impl GenServer
   def init(args) do
     expiry_ms = Keyword.get(args, :expiry_ms)
 
@@ -137,6 +143,7 @@ defmodule Hammer.Backend.Redis do
     {:ok, %{redix: redix, expiry_ms: expiry_ms, delete_buckets_timeout: delete_buckets_timeout}}
   end
 
+  @impl GenServer
   def handle_call(:stop, _from, state) do
     {:stop, :normal, :ok, state}
   end
@@ -212,7 +219,7 @@ defmodule Hammer.Backend.Redis do
   defp do_count_hit(r, key, now, increment, expiry) do
     redis_key = make_redis_key(key)
 
-    Redix.pipeline(r, [
+    cmds = [
       ["MULTI"],
       [
         "HINCRBY",
@@ -238,8 +245,9 @@ defmodule Hammer.Backend.Redis do
         expiry
       ],
       ["EXEC"]
-    ])
-    |> case do
+    ]
+
+    case Redix.pipeline(r, cmds) do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
         {:ok, new_count}
 
