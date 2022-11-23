@@ -58,13 +58,7 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Record a hit in the bucket identified by `key`
   """
-  @spec count_hit(
-          pid :: pid(),
-          key :: bucket_key,
-          now :: integer
-        ) ::
-          {:ok, count :: integer}
-          | {:error, reason :: any}
+  @impl Hammer.Backend
   def count_hit(pid, key, now) do
     GenServer.call(pid, {:count_hit, key, now, 1})
   end
@@ -72,14 +66,7 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Record a hit in the bucket identified by `key`, with a custom increment
   """
-  @spec count_hit(
-          pid :: pid(),
-          key :: bucket_key,
-          now :: integer,
-          increment :: integer
-        ) ::
-          {:ok, count :: integer}
-          | {:error, reason :: any}
+  @impl Hammer.Backend
   def count_hit(pid, key, now, increment) do
     GenServer.call(pid, {:count_hit, key, now, increment})
   end
@@ -87,13 +74,7 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Retrieve information about the bucket identified by `key`
   """
-  @spec get_bucket(
-          pid :: pid(),
-          key :: bucket_key
-        ) ::
-          {:ok, info :: bucket_info}
-          | {:ok, nil}
-          | {:error, reason :: any}
+  @impl Hammer.Backend
   def get_bucket(pid, key) do
     GenServer.call(pid, {:get_bucket, key})
   end
@@ -101,12 +82,7 @@ defmodule Hammer.Backend.Redis do
   @doc """
   Delete all buckets associated with `id`.
   """
-  @spec delete_buckets(
-          pid :: pid(),
-          id :: String.t()
-        ) ::
-          {:ok, count_deleted :: integer}
-          | {:error, reason :: any}
+  @impl Hammer.Backend
   def delete_buckets(pid, id) do
     delete_buckets_timeout = GenServer.call(pid, {:get_delete_buckets_timeout})
     GenServer.call(pid, {:delete_buckets, id}, delete_buckets_timeout)
