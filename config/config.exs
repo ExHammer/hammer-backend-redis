@@ -8,7 +8,10 @@ config :hammer,
      [
        expiry_ms: 60_000 * 60 * 2,
        delete_buckets_timeout: 5000,
-       redix_config: [host: "localhost", port: 6379]
+       redix_config: [
+         host: System.get_env("REDIS_HOST", "localhost"),
+         port: "REDIS_PORT" |> System.get_env("6379") |> String.to_integer()
+       ]
      ]}
 
 # This configuration is loaded before any dependency and is restricted
@@ -36,6 +39,6 @@ config :hammer,
 # Configuration from the imported file will override the ones defined
 # here (which is why it is important to import them last).
 #
-if Mix.env() == :test do
-  import_config "#{Mix.env()}.exs"
-end
+# if Mix.env() == :test do
+#   import_config "#{Mix.env()}.exs"
+# end
