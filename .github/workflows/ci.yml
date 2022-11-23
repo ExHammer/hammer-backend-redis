@@ -63,3 +63,6 @@ jobs:
 
       - run: mix credo
         if: ${{ matrix.lint }}
+
+      - name: Publish elixir packages to hex.pm
+        uses: wesleimp/action-publish-hex@v1
