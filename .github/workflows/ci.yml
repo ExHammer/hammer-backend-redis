@@ -8,43 +8,43 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     env:
       MIX_ENV: test
+    service:
+      redis:
+        # Docker Hub image
+        image: redis
+        # Set health checks to wait until redis has started
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - pair:
-              elixir: 1.12.3
-              otp: 23.3.4.18
-            lint: lint
+        os: [ubuntu-22.04, ubuntu-20.04]
+        elixir_version: [1.11, 1.12.3, 1.13.4, 1.14.1]
+        otp_version: [22.2, 23.3, 24.3, 25.1]
 
-          - pair:
-              elixir: 1.13.4
-              otp: 24.3.4.6
-            lint: lint
-
-          - pair:
-              elixir: 1.14.1
-              otp: 25.1.2
-            lint: lint
     steps:
       - uses: actions/checkout@v3
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.pair.otp}}
-          elixir-version: ${{matrix.pair.elixir}}
+          otp-version: ${{matrix.otp_version}}
+          elixir-version: ${{matrix.elixir_version}}
 
-      - uses: actions/cache@v3
-        with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-${{matrix.pair.elixir}}-${{matrix.pair.otp}}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-
+      # - uses: actions/cache@v3
+      #   with:
+      #     path: |
+      #       deps
+      #       _build
+      #     key: ${{ runner.os }}-mix-${{matrix.elixir_version}}-${{matrix.otp_version}}-${{ hashFiles('**/mix.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-mix-
 
       - run: mix deps.get
 
@@ -64,5 +64,13 @@ jobs:
       - run: mix credo
         if: ${{ matrix.lint }}
 
-      - name: Publish elixir packages to hex.pm
-        uses: wesleimp/action-publish-hex@v1
+  # publish:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Check out
+  #       uses: actions/checkout@v2
+
+  #     - name: Publish package to hex.pm
+  #       uses: wesleimp/action-publish-hex@v1
+  #       env:
+  #         HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
