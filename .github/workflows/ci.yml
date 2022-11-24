@@ -45,14 +45,14 @@ jobs:
           otp-version: ${{matrix.otp_version}}
           elixir-version: ${{matrix.elixir_version}}
 
-      # - uses: actions/cache@v3
-      #   with:
-      #     path: |
-      #       deps
-      #       _build
-            # key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
-            # restore-keys: |
-            #   deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
+      - uses: actions/cache@v3
+        with:
+          path: |
+            deps
+            _build
+            key: deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+            restore-keys: |
+              deps-${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}
 
       - run: mix deps.get
 
