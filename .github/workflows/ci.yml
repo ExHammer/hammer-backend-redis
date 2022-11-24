@@ -12,7 +12,7 @@ jobs:
     env:
       MIX_ENV: test
       # The hostname used to communicate with the Redis service container
-      REDIS_HOST: redis
+      REDIS_HOST: localhost
     services:
       redis:
         # Docker Hub image
