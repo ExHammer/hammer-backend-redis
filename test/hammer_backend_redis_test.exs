@@ -8,6 +8,7 @@ defmodule HammerBackendRedisTest do
     IO.inspect(config)
     {:ok, pid} = Backend.Redis.start_link(config)
     %{redix: redix} = :sys.get_state(pid)
+    IO.inspect(redix)
 
     assert {:ok, "OK"} = Redix.command(redix, ["FLUSHALL"])
     {:ok, [pid: pid, redix: redix]}
