@@ -5,6 +5,7 @@ defmodule HammerBackendRedisTest do
 
   setup do
     {Backend.Redis, config} = Application.get_env(:hammer, :backend)
+    IO.inspect(config)
     {:ok, pid} = Backend.Redis.start_link(config)
     %{redix: redix} = :sys.get_state(pid)
 
