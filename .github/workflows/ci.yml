@@ -62,8 +62,6 @@ jobs:
 
       - run: mix credo --strict --format=oneline
 
-      - run: echo "::debug::Set the Octocat ${{env.REDIS_HOST}}"
-
       - run: mix test --warnings-as-errors
 
 
