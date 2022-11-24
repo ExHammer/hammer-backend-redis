@@ -31,6 +31,16 @@ config :hammer,
 [Redix](https://hex.pm/packages/redix), it's also aliased to `redis_config`,
 with an `s`)
 
+Another option to configure Redis is to use the Redis Url format (see https://hexdocs.pm/redix/Redix.html#start_link/1-using-a-redis-uri) to configure Redis. If both options are specified
+the redis_url will be used first.
+
+```elixir
+config :hammer,
+  backend: {Hammer.Backend.Redis, [delete_buckets_timeout: 10_0000,
+                                   expiry_ms: 60_000 * 60 * 2,
+                                   redis_url: "redis://HOST:PORT"]}
+```
+
 And that's it, calls to `Hammer.check_rate/3` and so on will use Redis to store
 the rate-limit counters.
 
@@ -43,8 +53,8 @@ On hexdocs: [https://hexdocs.pm/hammer_backend_redis/](https://hexdocs.pm/hammer
 ## Run tests locally
 
 You need a running Redis instance. One can be started locally using `docker-compose up -d`.
-Export `$HAMMER_REDIS_URL` before running the tests. That variable should have the form `redis://HOST:PORT` (see https://hexdocs.pm/redix/Redix.html#start_link/1-using-a-redis-uri).
+See the docker-compose.yml for more details on.
 
 ## Getting Help
 
-If you're having trouble, either open an issue on this repo, or reach out to the maintainers ([@shanekilkelly](https://twitter.com/shanekilkelly)) on Twitter.
+If you're having trouble, open an issue on this repo.
