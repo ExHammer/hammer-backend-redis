@@ -1,5 +1,10 @@
 # Changelog
+## 6.1.2 (2022-11-11)
 
+### Changed
+
+- Applied credo suggestions
+- Update dependencies
 ## 6.1.1 (2022-11-11)
 
 ### Changed
