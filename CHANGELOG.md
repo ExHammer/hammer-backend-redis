@@ -11,14 +11,14 @@
 
 - package update and ownership transferred
 
-## 6.1.0
+## 6.1.0 (2019-09-03)
 
 ### Changed
 
 - Return actual count upon bucket creation (thanks to @davelively14, https://github.com/ExHammer/hammer-backend-redis/pull/16)
 
 
-## 6.0.1
+## 6.0.1 (2019-07-13)
 
 ### Added
 
@@ -33,7 +33,7 @@
 - Fixed a crash in `delete_buckets` (thanks to @ono, https://github.com/ExHammer/hammer-backend-redis/pull/15)
 
 
-## 6.0.0
+## 6.0.0 (2018-10-13)
 
 ### Changed
 
@@ -45,15 +45,22 @@
 
 - Actually honor `:redis_config`, as is claimed in the documentation
 
+## 5.0.0 (2018-10-13)
 
-## 4.0.3
+### Changed
+
+- Raise an error if `expiry_ms` is not configured explicitly
+- Update the `redix` dependency to `~> 0.8`
+
+
+## 4.0.3 (2018-05-08)
 
 ### Fixed
 
 - Fix a rare crash, again related to race-conditions
   (https://github.com/ExHammer/hammer-backend-redis/issues/11#issuecomment-387202359)
 
-## 4.0.2
+## 4.0.2 (2018-04-27)
 
 ### Fixed
 
@@ -61,7 +68,7 @@
   (https://github.com/ExHammer/hammer-backend-redis/issues/11)
 
 
-## 4.0.1
+## 4.0.1 (2018-04-24)
 
 ### Fixed
 
@@ -69,28 +76,28 @@
   (https://github.com/ExHammer/hammer-backend-redis/issues/11)
 
 
-## 4.0.0
+## 4.0.0 (2018-04-23)
 
 ### Changed
 
 - Update to `Hammer 4.0`
 
 
-## 3.0.0
+## 3.0.0 (2018-02-20)
 
 ### Changed
 
 - Require elixir >= 1.6
 
 
-## 2.0.0
+## 2.0.0 (2017-09-24)
 
 ### Changed
 
 - Updated to new Hammer API
 
 
-## 1.0.0
+## 1.0.0 (2017-08-27)
 
 ### Changed
 
@@ -99,6 +106,6 @@
 - Alias `redix_config` to `redis_config` in the config list, for convenience
 
 
-## 0.1.0
+## 0.1.0 (2017-07-31)
 
 Initial release.
