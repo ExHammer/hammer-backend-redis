@@ -5,6 +5,7 @@
 
 - Applied credo suggestions
 - Update dependencies
+
 ## 6.1.1 (2022-11-11)
 
 ### Changed
@@ -49,9 +50,7 @@
 
 ### Changed
 
-- Raise an error if `expiry_ms` is not configured explicitly
-- Update the `redix` dependency to `~> 0.8`
-
+- Update to the new custom-increment api
 
 ## 4.0.3 (2018-05-08)
 
