@@ -1,8 +1,8 @@
 # HammerBackendRedis
 
 [![Build Status](https://github.com/ExHammer/hammer-backend-redis/actions/workflows/ci.yml/badge.svg)](https://github.com/ExHammer/hammer-backend-redis/actions/workflows/ci.yml) [![Hex.pm](https://img.shields.io/hexpm/v/hammer_backend_redis.svg)](https://hex.pm/packages/hammer_backend_redis) [![Documentation](https://img.shields.io/badge/documentation-gray)](https://hexdocs.pm/hammer_backend_redis)
-[![Total Download](https://img.shields.io/hexpm/dt/hammer-backend-redis.svg)](https://hex.pm/packages/hammer-backend-redis)
-[![License](https://img.shields.io/hexpm/l/hammer-backend-redis.svg)](https://github.com/ExHammer/hammer-backend-redis/blob/master/LICENSE.md)
+[![Total Download](https://img.shields.io/hexpm/dt/hammer_backend_redis.svg)](https://hex.pm/packages/hammer_backend_redis)
+[![License](https://img.shields.io/hexpm/l/hammer_backend_redis.svg)](https://github.com/ExHammer/hammer-backend-redis/blob/master/LICENSE.md)
 
 A Redis backend for the [Hammer](https://github.com/ExHammer/hammer) rate-limiter.
 
