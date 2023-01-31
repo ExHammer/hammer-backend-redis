@@ -223,32 +223,35 @@ defmodule Hammer.Backend.Redis do
       ["EXEC"]
     ]
 
-    case Redix.pipeline(r, cmds) do
+    execute_pipeline(r, cmds)
+  end
+
+  defp execute_pipeline(conn, cmds) do
+    case Redix.pipeline(conn, cmds) do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
         {:ok, new_count}
 
+      {:ok, ["OK" | [error_message | _]]} ->
+        execute_pipeline_in_cluster(cmds, error_message)
+
       {:error, reason} ->
         {:error, reason}
-
-      {:ok, ["OK" | [error_message | _]]} ->
-        cluster_connection(error_message, cmds)
     end
   end
 
-  defp cluster_connection(%Redix.Error{message: error_message}, pipeline_cmds) do
+  defp execute_pipeline_in_cluster(pipeline_cmds, %{message: error_message}) do
     ["MOVED", _, node_address] = String.split(error_message, " ")
-    {:ok, node_conn} = Redix.start_link("redis://#{node_address}")
 
-    case Redix.pipeline(node_conn, pipeline_cmds) do
-      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
-        {:ok, new_count}
+    conn =
+      case Redix.start_link("redis://#{node_address}", name: :"cluster-node-#{node_address}") do
+        {:ok, node_conn} ->
+          node_conn
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, {:already_started, node_conn}} ->
+          node_conn
+      end
 
-      {:ok, ["OK" | _moved_errors]} ->
-        {:error, :moved_error_cluster_not_enable}
-    end
+    execute_pipeline(conn, pipeline_cmds)
   end
 
   defp make_redis_key({bucket, id}) do
