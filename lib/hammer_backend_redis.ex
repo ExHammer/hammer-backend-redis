@@ -229,6 +229,25 @@ defmodule Hammer.Backend.Redis do
 
       {:error, reason} ->
         {:error, reason}
+
+      {:ok, ["OK" | [error_message | _]]} ->
+        cluster_connection(error_message, cmds)
+    end
+  end
+
+  defp cluster_connection(%Redix.Error{message: error_message}, pipeline_cmds) do
+    ["MOVED", _, node_address] = String.split(error_message, " ")
+    {:ok, node_conn} = Redix.start_link("redis://#{node_address}")
+
+    case Redix.pipeline(node_conn, pipeline_cmds) do
+      {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
+        {:ok, new_count}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, ["OK" | _moved_errors]} ->
+        {:error, :moved_error_cluster_not_enable}
     end
   end
 
