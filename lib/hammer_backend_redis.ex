@@ -116,7 +116,15 @@ defmodule Hammer.Backend.Redis do
 
     delete_buckets_timeout = Keyword.get(args, :delete_buckets_timeout, 5000)
 
-    {:ok, %{redix: redix, expiry_ms: expiry_ms, delete_buckets_timeout: delete_buckets_timeout}}
+    cluster_nodes = MapSet.new([redix])
+
+    {:ok,
+     %{
+       redix: redix,
+       expiry_ms: expiry_ms,
+       delete_buckets_timeout: delete_buckets_timeout,
+       cluster_nodes: cluster_nodes
+     }}
   end
 
   @impl GenServer
@@ -126,9 +134,9 @@ defmodule Hammer.Backend.Redis do
 
   def handle_call({:count_hit, key, now, increment}, _from, %{redix: r} = state) do
     expiry = get_expiry(state)
-
-    result = do_count_hit(r, key, now, increment, expiry)
-    {:reply, result, state}
+    {result, node_conn} = do_count_hit(r, key, now, increment, expiry)
+    state_with_cluster_nodes = append_cluster_node(state, node_conn)
+    {:reply, result, state_with_cluster_nodes}
   end
 
   def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
@@ -155,7 +163,9 @@ defmodule Hammer.Backend.Redis do
 
   def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
     redis_key_pattern = make_redis_key_pattern(id)
-    result = do_delete_buckets(r, redis_key_pattern, 0, 0)
+
+    cluster_nodes_conn = MapSet.to_list(state.cluster_nodes)
+    result = do_delete_buckets(r, redis_key_pattern, 0, 0, cluster_nodes_conn)
 
     {:reply, result, state}
   end
@@ -168,13 +178,37 @@ defmodule Hammer.Backend.Redis do
     {:reply, delete_buckets_timeout, state}
   end
 
-  defp do_delete_buckets(r, redis_key_pattern, cursor, count_deleted) do
+  defp append_cluster_node(state, node_conn) do
+    if not is_nil(node_conn) do
+      cluster_nodes = MapSet.put(state.cluster_nodes, node_conn)
+      %{state | cluster_nodes: cluster_nodes}
+    else
+      state
+    end
+  end
+
+  defp do_delete_buckets(r, redis_key_pattern, cursor, count_deleted, [_single_node_conn]) do
+    delete_buckets_in_single_node(r, redis_key_pattern, cursor, count_deleted)
+  end
+
+  defp do_delete_buckets(_r, _redis_key_pattern, _cursor, _count_deleted, cluster_nodes) do
+    keys_in_cluster =
+      for conn <- cluster_nodes, reduce: [] do
+        acc ->
+          {:ok, keys} = Redix.command(conn, ["KEYS", "*"])
+          Enum.concat(acc, keys)
+      end
+
+    delete_buckets_in_cluster(keys_in_cluster, cluster_nodes)
+  end
+
+  def delete_buckets_in_single_node(r, redis_key_pattern, cursor, count_deleted) do
     case Redix.command(r, ["SCAN", cursor, "MATCH", redis_key_pattern]) do
       {:ok, ["0", []]} ->
         {:ok, count_deleted}
 
       {:ok, [next_cursor, []]} ->
-        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted)
+        delete_buckets_in_single_node(r, redis_key_pattern, next_cursor, count_deleted)
 
       {:ok, ["0", keys]} ->
         {:ok, deleted} = Redix.command(r, ["DEL" | keys])
@@ -182,11 +216,30 @@ defmodule Hammer.Backend.Redis do
 
       {:ok, [next_cursor, keys]} ->
         {:ok, deleted} = Redix.command(r, ["DEL" | keys])
-        do_delete_buckets(r, redis_key_pattern, next_cursor, count_deleted + deleted)
+        delete_buckets_in_single_node(r, redis_key_pattern, next_cursor, count_deleted + deleted)
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp delete_buckets_in_cluster(keys, cluster_nodes) do
+    [main_node | _] = cluster_nodes
+
+    deleted =
+      for key <- keys do
+        case Redix.command(main_node, ["DEL", key]) do
+          {:ok, _count} = res ->
+            res
+
+          {:error, %Redix.Error{message: error_message}} ->
+            ["MOVED", _, node_address] = String.split(error_message, " ")
+            node_conn = Process.whereis(:"cluster-node-#{node_address}")
+            {:ok, _} = Redix.command(node_conn, ["DEL", key])
+        end
+      end
+
+    {:ok, length(deleted)}
   end
 
   # we are using the first method described (called bucketing)
@@ -223,13 +276,13 @@ defmodule Hammer.Backend.Redis do
       ["EXEC"]
     ]
 
-    execute_pipeline(r, cmds)
+    execute_pipeline(r, cmds, nil)
   end
 
-  defp execute_pipeline(conn, cmds) do
+  defp execute_pipeline(conn, cmds, node_conn) do
     case Redix.pipeline(conn, cmds) do
       {:ok, ["OK", "QUEUED", "QUEUED", "QUEUED", "QUEUED", [new_count, _, _, 1]]} ->
-        {:ok, new_count}
+        {{:ok, new_count}, node_conn}
 
       {:ok, ["OK" | [error_message | _]]} ->
         execute_pipeline_in_cluster(cmds, error_message)
@@ -251,7 +304,7 @@ defmodule Hammer.Backend.Redis do
           node_conn
       end
 
-    execute_pipeline(conn, pipeline_cmds)
+    execute_pipeline(conn, pipeline_cmds, conn)
   end
 
   defp make_redis_key({bucket, id}) do

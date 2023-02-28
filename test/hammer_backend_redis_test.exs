@@ -104,14 +104,29 @@ defmodule HammerBackendRedisTest do
 
     for bucket <- 1..10 do
       bucket_key = {bucket, id}
-      {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
+      {:ok, _} = Hammer.Backend.Redis.count_hit(pid, bucket_key, now, 1)
     end
+
+    %{cluster_nodes: cluster_nodes} = :sys.get_state(pid)
+    cluster_connections = MapSet.to_list(cluster_nodes)
 
     assert {:ok, 0} = Backend.Redis.delete_buckets(pid, "foobar")
 
-    # Previous keys remain untouched
-    {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
-    assert 10 == length(keys)
+    if Enum.count(cluster_connections) == 1 do
+      # Previous keys remain untouched
+      {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
+      assert 10 == length(keys)
+    else
+      # Getting keys if there are more nodes connected
+      keys_in_cluster =
+        for conn <- cluster_connections, reduce: [] do
+          acc ->
+            {:ok, keys} = Redix.command(conn, ["KEYS", "*"])
+            Enum.concat(acc, keys)
+        end
+
+      assert 10 == length(keys_in_cluster)
+    end
   end
 
   test "delete buckets when many buckets exist", %{pid: pid, redix: redix} do
