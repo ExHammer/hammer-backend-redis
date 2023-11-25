@@ -16,6 +16,8 @@ defmodule Hammer.Backend.Redis do
     also aliased to `redis_config`
   - `redis_url`: String url of redis server to connect to
     (optional, invokes Redix.start_link/2)
+  - `pool_size`: `:poolboy`'s `:site` option, defaults to `5`
+  - `pool_max_overflow`: `:poolboy`'s `:max_overflow` option, defaults to `2`
   """
 
   @behaviour Hammer.Backend
@@ -48,10 +50,12 @@ defmodule Hammer.Backend.Redis do
     end
   end
 
+  @spec child_spec(Keyword.t()) :: :supervisor.child_spec()
   def child_spec(opts) do
     :poolboy.child_spec(:worker, pool_args(opts), worker_args(opts))
   end
 
+  @spec start_link(Keyword.t()) :: {:ok, pid} | {:error, any}
   def start_link(opts) do
     :poolboy.start_link(pool_args(opts), worker_args(opts))
   end
