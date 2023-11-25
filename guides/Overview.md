@@ -16,22 +16,26 @@ the [Hammer Tutorial](https://hexdocs.pm/hammer/tutorial.html) first, then add
 the `hammer_backend_redis` dependency:
 
 ```elixir
-    def deps do
-      [{:hammer_backend_redis, "~> 6.1"},
-      {:hammer, "~> 6.0"}]
-    end
+def deps do
+  [
+    {:hammer_backend_redis, "~> 7.0"}
+  ]
+end
 ```
 
 ... then configure the `:hammer` application to use the Redis backend:
 
 ```elixir
-config :hammer,
-  backend: {Hammer.Backend.Redis, [expiry_ms: 60_000 * 60 * 2,
-                                   redix_config: [host: "some.host"]]}
+config :hammer, backend: Hammer.Backend.Redis
 ```
 
-(the `redix_config` arg is a keyword-list which is passed to Redix, it's also
-aliased to `redis_config`, with an `s`)
+... and then add it to the supervision tree
+
+```elixir
+children = [
+  {Hammer.Backend.Redis, redix_url: "redis://localhost:6379"}
+]
+```
 
 And that's it, calls to `Hammer.check_rate/3` and so on will use Redis to store
 the rate-limit counters.
