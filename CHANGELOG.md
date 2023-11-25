@@ -1,4 +1,12 @@
 # Changelog
+
+## 7.0.0 (unreleased)
+
+### Changed
+
+- conform to new hammer api
+- fewer inderections (e.g. remove GenServer process wrapping Redix connection)
+
 ## 6.1.2 (2022-11-11)
 
 ### Changed
