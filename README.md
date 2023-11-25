@@ -14,8 +14,9 @@ can be installed by adding `hammer_backend_redis` to your list of dependencies i
 
 ```elixir
 def deps do
-  [{:hammer_backend_redis, "~> 6.1"},
-   {:hammer, "~> 6.0"}]
+  [
+    {:hammer_backend_redis, "~> 7.0"}
+  ]
 end
 ```
 
@@ -24,25 +25,15 @@ end
 Configure the `:hammer` application to use the Redis backend:
 
 ```elixir
-config :hammer,
-  backend: {Hammer.Backend.Redis, [delete_buckets_timeout: 10_0000,
-                                   expiry_ms: 60_000 * 60 * 2,
-                                   redix_config: [host: "localhost",
-                                                  port: 6379]]}
+config :hammer, backend: Hammer.Backend.Redis
 ```
 
-(the `redix_config` arg is a keyword-list which is passed to
-[Redix](https://hex.pm/packages/redix), it's also aliased to `redis_config`,
-with an `s`)
-
-Another option to configure Redis is to use the Redis Url format (see https://hexdocs.pm/redix/Redix.html#start_link/1-using-a-redis-uri) to configure Redis. If both options are specified
-the redis_url will be used first.
+And add it to your app's supervision tree:
 
 ```elixir
-config :hammer,
-  backend: {Hammer.Backend.Redis, [delete_buckets_timeout: 10_0000,
-                                   expiry_ms: 60_000 * 60 * 2,
-                                   redis_url: "redis://HOST:PORT"]}
+children = [
+  {Hammer.Backend.Redis, redis_url: "redis://localhost:6379"}
+]
 ```
 
 And that's it, calls to `Hammer.check_rate/3` and so on will use Redis to store

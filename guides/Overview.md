@@ -33,7 +33,7 @@ config :hammer, backend: Hammer.Backend.Redis
 
 ```elixir
 children = [
-  {Hammer.Backend.Redis, redix_url: "redis://localhost:6379"}
+  {Hammer.Backend.Redis, redis_url: "redis://localhost:6379"}
 ]
 ```
 

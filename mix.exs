@@ -11,8 +11,6 @@ defmodule Hammer.Backend.Redis.MixProject do
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
       version: @version,
       elixir: "~> 1.15",
-      build_embedded: Mix.env() == :prod,
-      start_permanent: Mix.env() == :prod,
       deps: deps(),
       docs: docs(),
       package: package(),
