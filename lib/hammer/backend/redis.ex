@@ -104,20 +104,12 @@ defmodule Hammer.Backend.Redis do
   end
 
   defp redix_get_bucket(conn, key) do
-    command = ["HMGET", make_redis_key(key), "count", "created", "updated"]
+    command = ["HMGET", make_redis_key(key), "count"]
 
     case Redix.command(conn, command) do
-      {:ok, [nil, nil, nil]} ->
-        {:ok, {0, nil, nil}}
-
-      {:ok, [count, created, updated]} ->
-        count = String.to_integer(count)
-        created = String.to_integer(created)
-        updated = String.to_integer(updated)
-        {:ok, {count, created, updated}}
-
-      {:error, _reason} = e ->
-        e
+      {:ok, [nil, nil, nil]} -> {:ok, 0}
+      {:ok, [count]} -> {:ok, String.to_integer(count)}
+      {:error, _reason} = e -> e
     end
   end
 
@@ -126,7 +118,7 @@ defmodule Hammer.Backend.Redis do
   end
 
   defp do_delete_buckets(conn, redis_key_pattern, cursor, count_deleted) do
-    case Redix.command(conn, ["SCAN", cursor, "MATCH"]) do
+    case Redix.command(conn, ["SCAN", cursor, "MATCH", redis_key_pattern]) do
       {:ok, ["0", []]} ->
         {:ok, count_deleted}
 

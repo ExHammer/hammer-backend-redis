@@ -18,7 +18,7 @@ defmodule Hammer.Backend.RedisTest do
 
   test "count_hit, insert" do
     bucket = bucket()
-    scale = :timer.seconds(10)
+    scale = :timer.hours(10)
 
     assert {:allow, 1} = Hammer.check_rate(bucket, scale, _limit = 5)
     assert {:allow, 2} = Hammer.check_rate(bucket, scale, _limit = 5)
@@ -31,123 +31,104 @@ defmodule Hammer.Backend.RedisTest do
   end
 
   test "count_hit, insert, with custom increment" do
-    #   bucket = 1
-    #   id = "one"
-    #   bucket_key = {bucket, id}
-    #   now = 123
-    #   now_str = Integer.to_string(now)
-    #   inc = Enum.random(1..100)
-    #   inc_str = Integer.to_string(inc)
+    bucket = bucket()
+    scale = :timer.hours(10)
+    inc = :rand.uniform(100)
+    inc_str = Integer.to_string(inc)
 
-    #   assert {:ok, inc} == Backend.Redis.count_hit(pid, bucket_key, now, inc)
-    #   assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:allow, ^inc} = Hammer.check_rate_inc(bucket, scale, _limit = 100, inc)
 
-    #   assert {:ok, ["count", ^inc_str, "created", ^now_str, "updated", ^now_str]} =
-    #            Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
+    assert {:ok, ["count", ^inc_str, "created", _, "updated", _]} =
+             :poolboy.transaction(
+               @pool,
+               &Redix.command(&1, ["HGETALL", make_redis_key(bucket, scale)])
+             )
   end
 
-  # test "count_hit, update", %{pid: pid, redix: redix} do
-  #   # 1. set-up
-  #   bucket = 1
-  #   id = "one"
-  #   bucket_key = {bucket, id}
-  #   now_before = 123
-  #   now_before_str = Integer.to_string(now_before)
-  #   now_after = 456
-  #   now_after_str = Integer.to_string(now_after)
+  test "count_hit, update" do
+    bucket = bucket()
+    scale = :timer.hours(10)
 
-  #   assert {:ok, 1} == Backend.Redis.count_hit(pid, bucket_key, now_before)
-  #   assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    {:allow, 1} = Hammer.check_rate(bucket, scale, _limit = 5)
+    :timer.sleep(100)
+    {:allow, 2} = Hammer.check_rate(bucket, scale, _limit = 5)
 
-  #   # 2. function call under test: count == 2
-  #   assert {:ok, 2} == Backend.Redis.count_hit(pid, bucket_key, now_after)
-  #   assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, ["count", "2", "created", created, "updated", updated]} =
+             :poolboy.transaction(
+               @pool,
+               &Redix.command(&1, ["HGETALL", make_redis_key(bucket, scale)])
+             )
 
-  #   assert {:ok, ["count", "2", "created", ^now_before_str, "updated", ^now_after_str]} =
-  #            Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
-  # end
+    refute updated == created
+    assert_in_delta String.to_integer(updated), String.to_integer(created), 200
+  end
 
-  # test "get_bucket", %{pid: pid} do
-  #   # 1. set-up
-  #   bucket = 1
-  #   id = "one"
-  #   bucket_key = {bucket, id}
+  test "get_bucket" do
+    bucket = bucket()
+    scale = :timer.hours(10)
+    limit = 300
 
-  #   now_before = 123
-  #   inc_before = Enum.random(1..100)
+    inc_before = :rand.uniform(100)
+    inc_after = :rand.uniform(100)
+    inc_total = inc_before + inc_after
 
-  #   now_after = 456
-  #   inc_after = Enum.random(1..100)
+    {:allow, ^inc_before} = Hammer.check_rate_inc(bucket, scale, limit, inc_before)
+    :timer.sleep(100)
+    {:allow, ^inc_total} = Hammer.check_rate_inc(bucket, scale, limit, inc_after)
 
-  #   inc_total = inc_before + inc_after
+    assert {:ok, {^inc_total, left, _, _, _}} = Hammer.inspect_bucket(bucket, scale, limit)
+    assert left == 300 - inc_total
+  end
 
-  #   assert {:ok, ^inc_before} = Backend.Redis.count_hit(pid, bucket_key, now_before, inc_before)
+  test "delete buckets" do
+    bucket = bucket()
+    scale = :timer.hours(10)
 
-  #   assert {:ok, ^inc_total} = Backend.Redis.count_hit(pid, bucket_key, now_after, inc_after)
+    {:allow, 1} = Hammer.check_rate(bucket, scale, _limit = 10)
+    assert {:ok, 1} = Hammer.delete_buckets(bucket)
+    assert {:ok, []} = :poolboy.transaction(@pool, &Redix.command(&1, ["KEYS", "*"]))
+  end
 
-  #   # 2. function call under test
-  #   assert {:ok, {^bucket_key, ^inc_total, ^now_before, ^now_after}} =
-  #            Backend.Redis.get_bucket(pid, bucket_key)
-  # end
+  test "delete buckets with no keys matching" do
+    scale = :timer.hours(10)
 
-  # test "delete buckets", %{pid: pid, redix: redix} do
-  #   bucket = 1
-  #   id = "one"
-  #   bucket_key = {bucket, id}
-  #   now = 123
+    {:allow, 1} = Hammer.check_rate(bucket(), scale, _limit = 10)
+    {:allow, 1} = Hammer.check_rate(bucket(), scale, _limit = 10)
 
-  #   {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
-  #   assert {:ok, 1} = Backend.Redis.delete_buckets(pid, id)
-  #   assert {:ok, []} = Redix.command(redix, ["KEYS", "*"])
-  # end
+    assert {:ok, 0} = Hammer.delete_buckets("foobar")
 
-  # test "delete buckets with no keys matching", %{pid: pid, redix: redix} do
-  #   id = "one"
-  #   now = 123
+    # Previous keys remain untouched
+    assert {:ok, ["Hammer:bucket:" <> _, "Hammer:bucket:" <> _]} =
+             :poolboy.transaction(@pool, &Redix.command(&1, ["KEYS", "*"]))
+  end
 
-  #   for bucket <- 1..10 do
-  #     bucket_key = {bucket, id}
-  #     {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
-  #   end
+  test "delete buckets when many buckets exist" do
+    scale = :timer.hours(10)
 
-  #   assert {:ok, 0} = Backend.Redis.delete_buckets(pid, "foobar")
+    for _ <- 1..1000 do
+      {:allow, 1} = Hammer.check_rate(bucket(), scale, _limit = 10)
+    end
 
-  #   # Previous keys remain untouched
-  #   {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
-  #   assert 10 == length(keys)
-  # end
+    assert {:ok, 1_000} = Hammer.delete_buckets("bucket")
+    assert {:ok, []} = :poolboy.transaction(@pool, &Redix.command(&1, ["KEYS", "*"]))
+  end
 
-  # test "delete buckets when many buckets exist", %{pid: pid, redix: redix} do
-  #   id = "one"
-  #   now = 123
+  test "delete buckets when scan returns empty list but valid cursor" do
+    # By writing only one key to the keyspace, most iterations of the SCAN call
+    # will return a valid cursor but an empty list. The valid cursor should
+    # make the delete_buckets call iterate until the intended key is found
+    scale = :timer.hours(10)
+    limit = 10
 
-  #   for bucket <- 1..1000 do
-  #     bucket_key = {bucket, id}
-  #     {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
-  #   end
+    bucket = bucket()
+    {:allow, 1} = Hammer.check_rate(bucket, scale, limit)
 
-  #   assert {:ok, 1_000} = Backend.Redis.delete_buckets(pid, id)
-  #   assert {:ok, []} = Redix.command(redix, ["KEYS", "*"])
-  # end
+    for _ <- 1..1000 do
+      {:allow, 1} = Hammer.check_rate(bucket(), scale, limit)
+    end
 
-  # test "delete buckets when scan returns empty list but valid cursor", %{pid: pid, redix: redix} do
-  #   # By writing only one key to the keyspace, most iterations of the SCAN call
-  #   # will return a valid cursor but an empty list. The valid cursor should
-  #   # make the delete_buckets call iterate until the intended key is found
-  #   now = 123
-  #   id = "one"
-  #   bucket_key = {1, id}
-  #   {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
-
-  #   another_id = "another"
-
-  #   for bucket <- 1..1000 do
-  #     bucket_key = {bucket, another_id}
-  #     {:ok, _} = Backend.Redis.count_hit(pid, bucket_key, now, 1)
-  #   end
-
-  #   assert {:ok, 1} = Backend.Redis.delete_buckets(pid, id)
-  #   {:ok, keys} = Redix.command(redix, ["KEYS", "*"])
-  #   assert 1_000 == length(keys)
-  # end
+    assert {:ok, 1} = Hammer.delete_buckets(bucket)
+    assert {:ok, keys} = :poolboy.transaction(@pool, &Redix.command(&1, ["KEYS", "*"]))
+    assert length(keys) == 1000
+  end
 end
