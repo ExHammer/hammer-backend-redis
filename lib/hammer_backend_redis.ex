@@ -17,6 +17,8 @@ defmodule Hammer.Backend.Redis do
     used to set TTL on Redis keys. This configuration is mandatory.
   - `redix_config`: Keyword list of options to the `Redix` redis client,
     also aliased to `redis_config`
+  - `key_prefix`: The prefix to use for all the redis keys.
+    This configuration is mandatory.
   - `redis_url`: String url of redis server to connect to
     (optional, invokes Redix.start_link/2)
   """
@@ -98,6 +100,12 @@ defmodule Hammer.Backend.Redis do
       raise RuntimeError, "Missing required config: expiry_ms"
     end
 
+    key_prefix = Keyword.get(args, :key_prefix)
+
+    if !key_prefix do
+      raise RuntimeError, "Missing required config: key_prefix"
+    end
+
     redix_config =
       Keyword.get(
         args,
@@ -116,7 +124,15 @@ defmodule Hammer.Backend.Redis do
 
     delete_buckets_timeout = Keyword.get(args, :delete_buckets_timeout, 5000)
 
-    {:ok, %{redix: redix, expiry_ms: expiry_ms, delete_buckets_timeout: delete_buckets_timeout}}
+    {
+      :ok,
+      %{
+        redix: redix,
+        expiry_ms: expiry_ms,
+        key_prefix: key_prefix,
+        delete_buckets_timeout: delete_buckets_timeout
+      }
+    }
   end
 
   @impl GenServer
@@ -124,15 +140,15 @@ defmodule Hammer.Backend.Redis do
     {:stop, :normal, :ok, state}
   end
 
-  def handle_call({:count_hit, key, now, increment}, _from, %{redix: r} = state) do
+  def handle_call({:count_hit, key, now, increment}, _from, state) do
     expiry = get_expiry(state)
 
-    result = do_count_hit(r, key, now, increment, expiry)
+    result = do_count_hit(state, key, now, increment, expiry)
     {:reply, result, state}
   end
 
   def handle_call({:get_bucket, key}, _from, %{redix: r} = state) do
-    redis_key = make_redis_key(key)
+    redis_key = make_redis_key(state, key)
     command = ["HMGET", redis_key, "count", "created", "updated"]
 
     result =
@@ -154,7 +170,7 @@ defmodule Hammer.Backend.Redis do
   end
 
   def handle_call({:delete_buckets, id}, _from, %{redix: r} = state) do
-    redis_key_pattern = make_redis_key_pattern(id)
+    redis_key_pattern = make_redis_key_pattern(state, id)
     result = do_delete_buckets(r, redis_key_pattern, 0, 0)
 
     {:reply, result, state}
@@ -192,8 +208,8 @@ defmodule Hammer.Backend.Redis do
   # we are using the first method described (called bucketing)
   # in https://www.youtube.com/watch?v=CRGPbCbRTHA
   # but we add the 'created' and 'updated' meta information fields.
-  defp do_count_hit(r, key, now, increment, expiry) do
-    redis_key = make_redis_key(key)
+  defp do_count_hit(%{redix: r} = state, key, now, increment, expiry) do
+    redis_key = make_redis_key(state, key)
 
     cmds = [
       ["MULTI"],
@@ -232,12 +248,12 @@ defmodule Hammer.Backend.Redis do
     end
   end
 
-  defp make_redis_key({bucket, id}) do
-    "Hammer:Redis:#{id}:#{bucket}"
+  defp make_redis_key(%{key_prefix: key_prefix}, {bucket, id}) do
+    "#{key_prefix}:#{id}:#{bucket}"
   end
 
-  defp make_redis_key_pattern(id) do
-    "Hammer:Redis:#{id}:*"
+  defp make_redis_key_pattern(%{key_prefix: key_prefix}, id) do
+    "#{key_prefix}:#{id}:*"
   end
 
   defp get_expiry(state) do

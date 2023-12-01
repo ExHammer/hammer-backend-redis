@@ -27,6 +27,7 @@ Configure the `:hammer` application to use the Redis backend:
 config :hammer,
   backend: {Hammer.Backend.Redis, [delete_buckets_timeout: 10_0000,
                                    expiry_ms: 60_000 * 60 * 2,
+                                   key_prefix: "Connect:RateLimit",
                                    redix_config: [host: "localhost",
                                                   port: 6379]]}
 ```
@@ -35,6 +36,8 @@ config :hammer,
 [Redix](https://hex.pm/packages/redix), it's also aliased to `redis_config`,
 with an `s`)
 
+(the `key_prefix` is mandatory arg which is used as a prefix for all the Redis keys)
+
 Another option to configure Redis is to use the Redis Url format (see https://hexdocs.pm/redix/Redix.html#start_link/1-using-a-redis-uri) to configure Redis. If both options are specified
 the redis_url will be used first.
 
@@ -42,6 +45,7 @@ the redis_url will be used first.
 config :hammer,
   backend: {Hammer.Backend.Redis, [delete_buckets_timeout: 10_0000,
                                    expiry_ms: 60_000 * 60 * 2,
+                                   key_prefix: "Connect:RateLimit",
                                    redis_url: "redis://HOST:PORT"]}
 ```
 

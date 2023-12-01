@@ -9,25 +9,35 @@ defmodule HammerBackendRedisTest do
     %{redix: redix} = :sys.get_state(pid)
 
     assert {:ok, "OK"} = Redix.command(redix, ["FLUSHALL"])
-    {:ok, [pid: pid, redix: redix]}
+
+    {:ok,
+     [
+       pid: pid,
+       redix: redix,
+       key_prefix: Keyword.get(config, :key_prefix)
+     ]}
   end
 
-  test "count_hit, insert", %{pid: pid, redix: redix} do
+  test "count_hit, insert", %{pid: pid, redix: redix, key_prefix: key_prefix} do
     bucket = 1
     id = "one"
     bucket_key = {bucket, id}
     now = 123
     now_str = Integer.to_string(now)
 
-    assert {:ok, 0} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 0} = Redix.command(redix, ["EXISTS", make_redis_key(key_prefix, bucket_key)])
     assert {:ok, 1} == Backend.Redis.count_hit(pid, bucket_key, now)
-    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(key_prefix, bucket_key)])
 
     assert {:ok, ["count", "1", "created", ^now_str, "updated", ^now_str]} =
-             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
+             Redix.command(redix, ["HGETALL", make_redis_key(key_prefix, bucket_key)])
   end
 
-  test "count_hit, insert, with custom increment", %{pid: pid, redix: redix} do
+  test "count_hit, insert, with custom increment", %{
+    pid: pid,
+    redix: redix,
+    key_prefix: key_prefix
+  } do
     bucket = 1
     id = "one"
     bucket_key = {bucket, id}
@@ -37,13 +47,13 @@ defmodule HammerBackendRedisTest do
     inc_str = Integer.to_string(inc)
 
     assert {:ok, inc} == Backend.Redis.count_hit(pid, bucket_key, now, inc)
-    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(key_prefix, bucket_key)])
 
     assert {:ok, ["count", ^inc_str, "created", ^now_str, "updated", ^now_str]} =
-             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
+             Redix.command(redix, ["HGETALL", make_redis_key(key_prefix, bucket_key)])
   end
 
-  test "count_hit, update", %{pid: pid, redix: redix} do
+  test "count_hit, update", %{pid: pid, redix: redix, key_prefix: key_prefix} do
     # 1. set-up
     bucket = 1
     id = "one"
@@ -54,14 +64,14 @@ defmodule HammerBackendRedisTest do
     now_after_str = Integer.to_string(now_after)
 
     assert {:ok, 1} == Backend.Redis.count_hit(pid, bucket_key, now_before)
-    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(key_prefix, bucket_key)])
 
     # 2. function call under test: count == 2
     assert {:ok, 2} == Backend.Redis.count_hit(pid, bucket_key, now_after)
-    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(bucket_key)])
+    assert {:ok, 1} = Redix.command(redix, ["EXISTS", make_redis_key(key_prefix, bucket_key)])
 
     assert {:ok, ["count", "2", "created", ^now_before_str, "updated", ^now_after_str]} =
-             Redix.command(redix, ["HGETALL", make_redis_key(bucket_key)])
+             Redix.command(redix, ["HGETALL", make_redis_key(key_prefix, bucket_key)])
   end
 
   test "get_bucket", %{pid: pid} do
@@ -148,7 +158,7 @@ defmodule HammerBackendRedisTest do
     assert 1_000 == length(keys)
   end
 
-  defp make_redis_key({bucket, id}) do
-    "Hammer:Redis:#{id}:#{bucket}"
+  defp make_redis_key(key_prefix, {bucket, id}) do
+    "#{key_prefix}:#{id}:#{bucket}"
   end
 end
