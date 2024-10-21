@@ -110,6 +110,23 @@ defmodule Hammer.Backend.Redis do
 
     redis_url = Keyword.get(args, :redis_url, nil)
 
+    is_elasticache = Keyword.get(redix_config, :is_elasticache, false)
+    ssl = Keyword.get(redix_config, :ssl, false)
+
+    redix_config =
+      if ssl and is_elasticache do
+        socket_opts = [
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+
+        redix_config
+        |> Keyword.put(:socket_opts, socket_opts)
+      else
+        redix_config
+      end
+
     {:ok, redix} =
       if is_binary(redis_url) && byte_size(redis_url) > 0 do
         Redix.start_link(redis_url, redix_config)
