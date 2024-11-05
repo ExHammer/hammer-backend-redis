@@ -110,7 +110,7 @@ defmodule Hammer.Backend.Redis do
 
     redis_url = Keyword.get(args, :redis_url, nil)
 
-    is_elasticache = Keyword.get(redix_config, :is_elasticache, false)
+    is_elasticache = Keyword.get(args, :is_elasticache, false)
     ssl = Keyword.get(redix_config, :ssl, false)
 
     redix_config =
