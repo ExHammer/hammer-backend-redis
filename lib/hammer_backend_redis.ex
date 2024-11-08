@@ -21,6 +21,7 @@ defmodule Hammer.Backend.Redis do
   - `redis_url`: String url of redis server to connect to
     (optional, invokes Redix.start_link/2)
   """
+require Logger
 
   @behaviour Hammer.Backend
 
@@ -109,6 +110,28 @@ defmodule Hammer.Backend.Redis do
       )
 
     redis_url = Keyword.get(args, :redis_url, nil)
+
+    is_elasticache = Keyword.get(args, :is_elasticache, false)
+    ssl = Keyword.get(redix_config, :ssl, false)
+
+    Logger.info("SSL is #{ssl}")
+    Logger.info("is_elasticache is #{ssl}")
+    redix_config =
+      if ssl and is_elasticache do
+        Logger.info("inside the if condition")
+        socket_opts = [
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+
+        redix_config
+        |> Keyword.put(:socket_opts, socket_opts)
+      else
+        redix_config
+      end
+
+    Logger.info("final redix_config is: #{redix_config}")
 
     {:ok, redix} =
       if is_binary(redis_url) && byte_size(redis_url) > 0 do
