@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.0.0-rc.0 (2024-12-06)
+
+### Changed
+
+- Conform to new Hammer API
+
 ## 6.2.0 (2024-12-04)
 
 ### Changed
