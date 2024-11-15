@@ -5,6 +5,7 @@
 ### Changed
 
 - Conform to new Hammer API
+- Remove Poolboy
 
 ## 6.2.0 (2024-12-04)
 
