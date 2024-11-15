@@ -37,8 +37,7 @@ defmodule Hammer.Redis.MixProject do
       {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.28", only: :dev},
       {:hammer, github: "ruslandoga/hammer", branch: "just-use"},
-      {:redix, "~> 1.1"},
-      {:poolboy, "~> 1.5"}
+      {:redix, "~> 1.1"}
     ]
   end
 

@@ -1,7 +1,6 @@
 defmodule Hammer.Redis do
   @moduledoc """
   This backend uses the [Redix](https://hex.pm/packages/redix) library to connect to Redis.
-  And [poolboy](https://hex.pm/packages/poolboy) to manage the connections.
 
       defmodule MyApp.RateLimit do
         # the default prefix is "MyApp.RateLimit:"
@@ -9,9 +8,7 @@ defmodule Hammer.Redis do
         use Hammer, backend: Hammer.Redis, prefix: "MyApp.RateLimit:", timeout: :infinity
       end
 
-      redix_opts = [url: "redis://localhost:6379"]
-      poolboy_opts = [size: 10, max_overflow: 2]
-      MyApp.RateLimit.start_link(redix_opts ++ poolboy_opts)
+      MyApp.RateLimit.start_link(url: "redis://localhost:6379")
 
       # increment and timeout arguments are optional
       # by default increment is 1 and timeout is as defined in the module
@@ -26,6 +23,9 @@ defmodule Hammer.Redis do
     prefix = String.trim_leading(Atom.to_string(module), "Elixir.")
     prefix = Keyword.get(hammer_opts, :prefix, prefix)
     timeout = Keyword.get(hammer_opts, :timeout, :infinity)
+
+    # TODO
+    name = module
 
     unless is_binary(prefix) do
       raise ArgumentError, """
@@ -47,68 +47,58 @@ defmodule Hammer.Redis do
     end
 
     quote do
-      @pool unquote(module)
+      @name unquote(name)
       @prefix unquote(prefix)
       @timeout unquote(timeout)
 
       def child_spec(opts) do
         %{
-          id: @pool,
+          id: __MODULE__,
           start: {__MODULE__, :start_link, [opts]},
           type: :worker
         }
       end
 
       def start_link(opts) do
-        opts = Keyword.put(opts, :name, @pool)
+        opts = Keyword.put(opts, :name, @name)
         Hammer.Redis.start_link(opts)
       end
 
       def hit(key, scale, limit, increment \\ 1, timeout \\ @timeout) do
-        Hammer.Redis.hit(@pool, @prefix, key, scale, limit, increment, timeout)
+        Hammer.Redis.hit(@name, @prefix, key, scale, limit, increment, timeout)
       end
 
       def inc(key, scale, increment \\ 1, timeout \\ @timeout) do
-        Hammer.Redis.inc(@pool, @prefix, key, scale, increment, timeout)
+        Hammer.Redis.inc(@name, @prefix, key, scale, increment, timeout)
       end
 
       def set(key, scale, count, timeout \\ @timeout) do
-        Hammer.Redis.set(@pool, @prefix, key, scale, count, timeout)
+        Hammer.Redis.set(@name, @prefix, key, scale, count, timeout)
       end
 
       def get(key, scale, timeout \\ @timeout) do
-        Hammer.Redis.get(@pool, @prefix, key, scale, timeout)
+        Hammer.Redis.get(@name, @prefix, key, scale, timeout)
       end
     end
   end
 
   @doc false
   def start_link(opts) do
-    {name, opts} = Keyword.pop!(opts, :name)
-    {pool_opts, redix_opts} = Keyword.split(opts, [:size, :max_overflow])
+    {url, opts} = Keyword.pop(opts, :url)
 
-    pool_args = [
-      name: {:local, name},
-      worker_module: Redix,
-      size: Keyword.get(pool_opts, :size, 5),
-      max_overflow: Keyword.get(opts, :max_overflow, 2)
-    ]
-
-    {url, redix_opts} = Keyword.pop(redix_opts, :url)
-
-    redix_opts =
+    opts =
       if url do
         url_opts = Redix.URI.to_start_options(url)
-        Keyword.merge(url_opts, redix_opts)
+        Keyword.merge(url_opts, opts)
       else
-        redix_opts
+        opts
       end
 
-    :poolboy.start_link(pool_args, redix_opts)
+    Redix.start_link(opts)
   end
 
   @doc false
-  def hit(pool, prefix, key, scale, limit, increment, timeout) do
+  def hit(name, prefix, key, scale, limit, increment, timeout) do
     now = now()
     window = div(now, scale)
     full_key = redis_key(prefix, key, window)
@@ -123,7 +113,7 @@ defmodule Hammer.Redis do
     ]
 
     ["OK", "QUEUED", "QUEUED", [count, _]] =
-      :poolboy.transaction(pool, fn conn -> Redix.pipeline!(conn, commands) end, timeout)
+      Redix.pipeline!(name, commands, timeout: timeout)
 
     if count <= limit do
       {:allow, count}
@@ -133,7 +123,7 @@ defmodule Hammer.Redis do
   end
 
   @doc false
-  def inc(pool, prefix, key, scale, increment, timeout) do
+  def inc(name, prefix, key, scale, increment, timeout) do
     now = now()
     window = div(now, scale)
     full_key = redis_key(prefix, key, window)
@@ -147,13 +137,13 @@ defmodule Hammer.Redis do
     ]
 
     ["OK", "QUEUED", "QUEUED", [count, _]] =
-      :poolboy.transaction(pool, fn conn -> Redix.pipeline!(conn, commands) end, timeout)
+      Redix.pipeline!(name, commands, timeout: timeout)
 
     count
   end
 
   @doc false
-  def set(pool, prefix, key, scale, count, timeout) do
+  def set(name, prefix, key, scale, count, timeout) do
     now = now()
     window = div(now, scale)
     full_key = redis_key(prefix, key, window)
@@ -167,27 +157,17 @@ defmodule Hammer.Redis do
     ]
 
     ["OK", "QUEUED", "QUEUED", [_, _]] =
-      :poolboy.transaction(
-        pool,
-        fn conn -> Redix.pipeline!(conn, commands) end,
-        timeout
-      )
+      Redix.pipeline!(name, commands, timeout: timeout)
 
     count
   end
 
   @doc false
-  def get(pool, prefix, key, scale, timeout) do
+  def get(name, prefix, key, scale, timeout) do
     now = now()
     window = div(now, scale)
     full_key = redis_key(prefix, key, window)
-
-    count =
-      :poolboy.transaction(
-        pool,
-        fn conn -> Redix.command!(conn, ["GET", full_key]) end,
-        timeout
-      )
+    count = Redix.command!(name, ["GET", full_key], timeout: timeout)
 
     case count do
       nil -> 0
