@@ -1,4 +1,11 @@
 # Changelog
+
+## 7.0.0 (unreleased)
+
+### Changed
+
+- Conform to new Hammer API
+
 ## 6.1.2 (2022-11-11)
 
 ### Changed
