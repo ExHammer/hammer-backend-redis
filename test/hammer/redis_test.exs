@@ -9,17 +9,15 @@ defmodule Hammer.RedisTest do
 
   setup do
     start_supervised!({RateLimit, url: "redis://localhost:6379"})
-    "OK" = :poolboy.transaction(RateLimit, &Redix.command!(&1, ["FLUSHALL"]))
+    "OK" = Redix.command!(RateLimit, ["FLUSHALL"])
     :ok
   end
 
-  defp redis_all(pool \\ RateLimit) do
-    :poolboy.transaction(pool, fn conn ->
-      keys = Redix.command!(conn, ["KEYS", "*"])
+  defp redis_all(conn \\ RateLimit) do
+    keys = Redix.command!(conn, ["KEYS", "*"])
 
-      Enum.map(keys, fn key ->
-        {key, Redix.command!(conn, ["GET", key])}
-      end)
+    Enum.map(keys, fn key ->
+      {key, Redix.command!(conn, ["GET", key])}
     end)
   end
 
