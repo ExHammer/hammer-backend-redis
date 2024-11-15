@@ -8,7 +8,7 @@
 
 A Redis backend for the [Hammer](https://github.com/ExHammer/hammer) rate-limiter.
 
-This backend uses the [Redix](https://hex.pm/packages/redix) library to connect to Redis. A single connection is used per rate-limiter. It should be enough for most use-cases since packets for rate limiting requests are short (i.e. no head of line blocking) and Redis is OK with pipelined requests (i.e. we don't block awaiting replies). Consider benchmarking before introducing more connections since TCP performance might be unintuitive.
+This backend is a thin [Redix](https://hex.pm/packages/redix) wrapper. A single connection is used per rate-limiter. It should be enough for most use-cases since packets for rate limiting requests are short (i.e. no head of line blocking) and Redis is OK with [pipelining](https://redis.io/learn/operate/redis-at-scale/talking-to-redis/client-performance-improvements#pipelining) (i.e. we don't block awaiting replies). Consider benchmarking before introducing more connections since TCP performance might be unintuitive. For possible pooling approaches, see Redix docs on [pooling](https://hexdocs.pm/redix/real-world-usage.html#name-based-pool) and also [PartitionSupervisor.](https://hexdocs.pm/elixir/1.17.3/PartitionSupervisor.html) Do not use poolboy or db_connection-like pools since they practically disable pipelining which leads to worse connection utilisation and worse performance.
 
 The algorithm we are using is the first method described (called "bucketing") in [Rate Limiting with Redis](https://youtu.be/CRGPbCbRTHA?t=753).
 In other sources it's sometimes called a "fixed window counter".
