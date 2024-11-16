@@ -117,6 +117,7 @@ defmodule Hammer.Redis do
     commands = [
       ["MULTI"],
       ["INCRBY", full_key, increment],
+      # TODO document time issues
       ["EXPIREAT", full_key, div(expires_at, 1000), "NX"],
       ["EXEC"]
     ]
