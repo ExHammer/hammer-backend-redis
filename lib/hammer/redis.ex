@@ -105,11 +105,8 @@ defmodule Hammer.Redis do
     expires_at = (window + 1) * scale
 
     commands = [
-      ["MULTI"],
       ["INCRBY", full_key, increment],
-      # TODO document time issues
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"],
-      ["EXEC"]
+      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
     ["OK", "QUEUED", "QUEUED", [count, _]] =
@@ -130,10 +127,8 @@ defmodule Hammer.Redis do
     expires_at = (window + 1) * scale
 
     commands = [
-      ["MULTI"],
       ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"],
-      ["EXEC"]
+      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
     ["OK", "QUEUED", "QUEUED", [count, _]] =
@@ -150,10 +145,8 @@ defmodule Hammer.Redis do
     expires_at = (window + 1) * scale
 
     commands = [
-      ["MULTI"],
       ["SET", full_key, count],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"],
-      ["EXEC"]
+      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
     ["OK", "QUEUED", "QUEUED", [_, _]] =

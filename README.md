@@ -13,6 +13,8 @@ This backend is a thin [Redix](https://hex.pm/packages/redix) wrapper. A single 
 The algorithm we are using is the first method described (called "bucketing") in [Rate Limiting with Redis](https://youtu.be/CRGPbCbRTHA?t=753).
 In other sources it's sometimes called a "fixed window counter".
 
+**TODO:** document ttl issues if servers are misconfigured
+
 ## Installation
 
 Hammer-backend-redis
