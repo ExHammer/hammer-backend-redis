@@ -109,7 +109,7 @@ defmodule Hammer.Redis do
       ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
-    ["OK", "QUEUED", "QUEUED", [count, _]] =
+    [count, _] =
       Redix.pipeline!(name, commands, timeout: timeout)
 
     if count <= limit do
@@ -131,7 +131,7 @@ defmodule Hammer.Redis do
       ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
-    ["OK", "QUEUED", "QUEUED", [count, _]] =
+    [count, _] =
       Redix.pipeline!(name, commands, timeout: timeout)
 
     count
@@ -149,8 +149,7 @@ defmodule Hammer.Redis do
       ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
-    ["OK", "QUEUED", "QUEUED", [_, _]] =
-      Redix.pipeline!(name, commands, timeout: timeout)
+    Redix.pipeline!(name, commands, timeout: timeout)
 
     count
   end
