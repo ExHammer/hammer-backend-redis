@@ -1,7 +1,7 @@
 defmodule HammerBackendRedis.Mixfile do
   use Mix.Project
 
-  @version "6.1.2"
+  @version "6.2.0"
 
   def project do
     [
@@ -10,7 +10,7 @@ defmodule HammerBackendRedis.Mixfile do
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
       version: "#{@version}",
-      elixir: "~> 1.12",
+      elixir: "~> 1.13",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
