@@ -1,4 +1,13 @@
 # Changelog
+
+## 6.2.0 (2024-12-04)
+
+### Changed
+
+- Package updates
+- Add config to customize the redis prefix
+- Deprecate Elixir 1.12 as this are no longer supported
+
 ## 6.1.2 (2022-11-11)
 
 ### Changed
