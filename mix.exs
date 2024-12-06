@@ -1,7 +1,7 @@
-defmodule HammerBackendRedis.Mixfile do
+defmodule Hammer.Redis.MixProject do
   use Mix.Project
 
-  @version "6.2.0"
+  @version "7.0.0-rc.0"
 
   def project do
     [
@@ -9,14 +9,12 @@ defmodule HammerBackendRedis.Mixfile do
       description: "Redis backend for Hammer rate-limiter",
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
-      version: "#{@version}",
-      elixir: "~> 1.13",
-      build_embedded: Mix.env() == :prod,
-      start_permanent: Mix.env() == :prod,
+      version: @version,
+      elixir: "~> 1.14",
       deps: deps(),
       docs: docs(),
       package: package(),
-      test_coverage: [summary: [threshold: 75]]
+      test_coverage: [summary: [threshold: 90]]
     ]
   end
 
@@ -26,22 +24,20 @@ defmodule HammerBackendRedis.Mixfile do
 
   def docs do
     [
-      main: "overview",
-      extras: ["guides/Overview.md", "CHANGELOG.md"],
-      source_ref: "v#{@version}",
-      main: "overview",
-      formatters: ["html", "epub"]
+      main: "readme",
+      extras: ["README.md", "CHANGELOG.md"],
+      skip_undefined_reference_warnings_on: ["README.md", "CHANGELOG.md"],
+      source_ref: "v#{@version}"
     ]
   end
 
   defp deps do
     [
-      {:credo, "~> 1.6", only: [:dev, :test]},
-      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
-      {:ex_doc, "~> 0.28", only: :dev},
-      {:hammer, "~> 6.0"},
-      {:mock, "~> 0.3.7", only: :test},
-      {:redix, "~> 1.1"}
+      {:credo, "~> 1.7", only: [:dev, :test]},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev},
+      {:hammer, "7.0.0-rc.0"},
+      {:redix, "~> 1.5"}
     ]
   end
 

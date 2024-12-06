@@ -9,12 +9,11 @@ on:
       - master
 
 jobs:
-  setup:
+  test:
     runs-on: ubuntu-latest
     env:
       MIX_ENV: test
-      # The hostname used to communicate with the Redis service container
-      REDIS_HOST: localhost
+
     services:
       redis:
         # Docker Hub image
@@ -29,41 +28,47 @@ jobs:
           --health-retries 5
 
     strategy:
-      fail-fast: false
+      # https://hexdocs.pm/elixir/compatibility-and-deprecations.html#between-elixir-and-erlang-otp
       matrix:
-        os: [ubuntu-22.04, ubuntu-20.04]
-        elixir_version: [1.12.3, 1.13.3, 1.14.1]
-        otp_version: [24, 25]
-        exclude:
-          - otp_version: 25
-            elixir_version: 1.12.3
+        elixir: [1.15, 1.16, 1.17]
+        otp: [25, 26]
+        include:
+          - elixir: 1.14
+            otp: 25
+          - elixir: 1.17
+            otp: 27
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{matrix.otp_version}}
-          elixir-version: ${{matrix.elixir_version}}
+          otp-version: ${{matrix.otp}}
+          elixir-version: ${{matrix.elixir}}
 
       - uses: actions/cache@v4
         with:
           path: |
             deps
             _build
-          key: deps-${{ runner.os }}-${{ matrix.otp_version }}-${{ matrix.elixir_version }}-${{ hashFiles('**/mix.lock') }}
+          key: test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
-            deps-${{ runner.os }}-${{ matrix.otp_version }}-${{ matrix.elixir_version }}
+            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-${{ github.head_ref || github.ref }}-mix-
+            test-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-ref-refs/heads/master-mix-
 
       - run: mix deps.get
-
-      - run: mix format --check-formatted
-
       - run: mix deps.unlock --check-unused
-
       - run: mix deps.compile
-
       - run: mix compile --warnings-as-errors
-
       - run: mix credo --strict --format=oneline
+      - run: mix test --warnings-as-errors --cover --include redis --include slow
 
-      - run: mix test --warnings-as-errors --cover
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: 1
+          otp-version: 27
+      - run: mix format --check-formatted

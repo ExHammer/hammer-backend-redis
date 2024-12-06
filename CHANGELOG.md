@@ -1,5 +1,12 @@
 # Changelog
 
+## 7.0.0-rc.0 (2024-12-06)
+
+### Changed
+
+- Conform to new Hammer API
+- Remove Poolboy as it introduces unnecessary blocking.
+
 ## 6.2.0 (2024-12-04)
 
 ### Changed
