@@ -10,7 +10,7 @@ defmodule Hammer.Redis.MixProject do
       source_url: "https://github.com/ExHammer/hammer-backend-redis",
       homepage_url: "https://github.com/ExHammer/hammer-backend-redis",
       version: @version,
-      elixir: "~> 1.15",
+      elixir: "~> 1.14",
       deps: deps(),
       docs: docs(),
       package: package(),
@@ -33,11 +33,11 @@ defmodule Hammer.Redis.MixProject do
 
   defp deps do
     [
-      {:credo, "~> 1.6", only: [:dev, :test]},
-      {:dialyxir, "~> 1.1", only: [:dev], runtime: false},
-      {:ex_doc, "~> 0.28", only: :dev},
-      {:hammer, github: "ruslandoga/hammer", branch: "just-use"},
-      {:redix, "~> 1.1"}
+      {:credo, "~> 1.7", only: [:dev, :test]},
+      {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev},
+      {:hammer, "7.0.0-rc.0"},
+      {:redix, "~> 1.5"}
     ]
   end
 
