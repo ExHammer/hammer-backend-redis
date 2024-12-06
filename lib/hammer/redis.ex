@@ -16,9 +16,11 @@ defmodule Hammer.Redis do
       {:allow, _count} = MyApp.RateLimit.hit(key, scale, limit, _increment = 1, _timeout = :infinity)
 
   """
-  # Redix does not define a type for its start options, so we define our own so hopefully redix will be updated to provide a type
+  # Redix does not define a type for its start options, so we define our
+  # own so hopefully redix will be updated to provide a type
   @type redis_opts :: {:url, String.t()} | Keyword.t()
 
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defmacro __before_compile__(%{module: module}) do
     hammer_opts = Module.get_attribute(module, :hammer_opts)
 
