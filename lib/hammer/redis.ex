@@ -26,7 +26,6 @@ defmodule Hammer.Redis do
     prefix = Keyword.get(hammer_opts, :prefix, prefix)
     timeout = Keyword.get(hammer_opts, :timeout, :infinity)
 
-    # TODO
     name = module
 
     unless is_binary(prefix) do
