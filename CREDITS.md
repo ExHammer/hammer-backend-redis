@@ -8,3 +8,4 @@ Credits in no special order:
 - [Tatsuya Ono](https://github.com/ono)
 - [Dave Lively](https://github.com/davelively14)
 - [Emmanuel Pinault](https://github.com/epinault)
+- [ruslandoga](https://github.com/ruslandoga)
