@@ -18,7 +18,8 @@ defmodule Hammer.Redis do
   """
   # Redix does not define a type for its start options, so we define our
   # own so hopefully redix will be updated to provide a type
-  @type redis_opts :: {:url, String.t()} | Keyword.t()
+  @type redis_option :: {:url, String.t()} | {:name, String.t()}
+  @type redis_options :: [redis_option()]
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defmacro __before_compile__(%{module: module}) do
@@ -63,7 +64,7 @@ defmodule Hammer.Redis do
         }
       end
 
-      @spec start_link(Hammer.Redis.redis_opts()) ::
+      @spec start_link(Hammer.Redis.redis_options()) ::
               {:ok, pid()} | :ignore | {:error, term()}
       def start_link(opts) do
         opts = Keyword.put(opts, :name, @name)
@@ -89,7 +90,7 @@ defmodule Hammer.Redis do
   end
 
   @doc false
-  @spec start_link(Hammer.Redis.redis_opts()) ::
+  @spec start_link(Hammer.Redis.redis_options()) ::
           {:ok, pid()} | :ignore | {:error, term()}
   def start_link(opts) do
     {url, opts} = Keyword.pop(opts, :url)
