@@ -63,28 +63,25 @@ defmodule Hammer.Redis do
         }
       end
 
-      @spec start_link(Hammer.Redis.redis_opts()) :: {:ok, Redix.connection()}
+      @spec start_link(Hammer.Redis.redis_opts()) ::
+              {:ok, pid()} | :ignore | {:error, term()}
       def start_link(opts) do
         opts = Keyword.put(opts, :name, @name)
         Hammer.Redis.start_link(opts)
       end
 
-      @impl Hammer
       def hit(key, scale, limit, increment \\ 1) do
         Hammer.Redis.hit(@name, @prefix, key, scale, limit, increment, @timeout)
       end
 
-      @impl Hammer
       def inc(key, scale, increment \\ 1) do
         Hammer.Redis.inc(@name, @prefix, key, scale, increment, @timeout)
       end
 
-      @impl Hammer
       def set(key, scale, count) do
         Hammer.Redis.set(@name, @prefix, key, scale, count, @timeout)
       end
 
-      @impl Hammer
       def get(key, scale) do
         Hammer.Redis.get(@name, @prefix, key, scale, @timeout)
       end
@@ -92,7 +89,8 @@ defmodule Hammer.Redis do
   end
 
   @doc false
-  @spec start_link(Hammer.Redis.redis_opts()) :: {:ok, Redix.connection()}
+  @spec start_link(Hammer.Redis.redis_opts()) ::
+          {:ok, pid()} | :ignore | {:error, term()}
   def start_link(opts) do
     {url, opts} = Keyword.pop(opts, :url)
 
