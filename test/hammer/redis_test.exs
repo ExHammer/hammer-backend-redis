@@ -9,20 +9,31 @@ defmodule Hammer.RedisTest do
 
   setup do
     start_supervised!({RateLimit, url: "redis://localhost:6379"})
-    "OK" = Redix.command!(RateLimit, ["FLUSHALL"])
-    :ok
+    key = "key#{:rand.uniform(1_000_000)}"
+
+    {:ok, %{key: key}}
   end
 
   defp redis_all(conn \\ RateLimit) do
-    keys = Redix.command!(conn, ["KEYS", "*"])
+    keys = Redix.command!(conn, ["KEYS", "Hammer.RedisTest.RateLimit*"])
 
     Enum.map(keys, fn key ->
       {key, Redix.command!(conn, ["GET", key])}
     end)
   end
 
-  test "key prefix is set to the module name by default" do
-    key = "key"
+  defp clean_keys(conn \\ RateLimit) do
+    keys = Redix.command!(conn, ["KEYS", "Hammer.RedisTest.RateLimit*"])
+
+    to_delete =
+      Enum.map(keys, fn key ->
+        ["DEL", key]
+      end)
+
+    Redix.pipeline!(RateLimit, to_delete)
+  end
+
+  test "key prefix is set to the module name by default", %{key: key} do
     scale = :timer.seconds(10)
     limit = 5
 
@@ -31,8 +42,7 @@ defmodule Hammer.RedisTest do
     assert [{"Hammer.RedisTest.RateLimit:" <> _, "1"}] = redis_all()
   end
 
-  test "key has expirytime set" do
-    key = "key"
+  test "key has expirytime set", %{key: key} do
     scale = :timer.seconds(10)
     limit = 5
 
@@ -42,19 +52,19 @@ defmodule Hammer.RedisTest do
     expected_expiretime = div(System.system_time(:second), 10) * 10 + 10
 
     assert Redix.command!(RateLimit, ["EXPIRETIME", redis_key]) == expected_expiretime
+
+    clean_keys()
   end
 
   describe "hit" do
-    test "returns {:allow, 1} tuple on first access" do
-      key = "key"
+    test "returns {:allow, 1} tuple on first access", %{key: key} do
       scale = :timer.seconds(10)
       limit = 10
 
       assert {:allow, 1} = RateLimit.hit(key, scale, limit)
     end
 
-    test "returns {:allow, 4} tuple on in-limit checks" do
-      key = "key"
+    test "returns {:allow, 4} tuple on in-limit checks", %{key: key} do
       scale = :timer.minutes(10)
       limit = 10
 
@@ -62,10 +72,11 @@ defmodule Hammer.RedisTest do
       assert {:allow, 2} = RateLimit.hit(key, scale, limit)
       assert {:allow, 3} = RateLimit.hit(key, scale, limit)
       assert {:allow, 4} = RateLimit.hit(key, scale, limit)
+
+      clean_keys()
     end
 
-    test "returns expected tuples on mix of in-limit and out-of-limit checks" do
-      key = "key"
+    test "returns expected tuples on mix of in-limit and out-of-limit checks", %{key: key} do
       scale = :timer.minutes(10)
       limit = 2
 
@@ -73,11 +84,11 @@ defmodule Hammer.RedisTest do
       assert {:allow, 2} = RateLimit.hit(key, scale, limit)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit)
+      clean_keys()
     end
 
     @tag :slow
-    test "returns expected tuples after waiting for the next window" do
-      key = "key"
+    test "returns expected tuples after waiting for the next window", %{key: key} do
       scale = :timer.seconds(1)
       limit = 2
 
@@ -90,20 +101,20 @@ defmodule Hammer.RedisTest do
       assert {:allow, 1} = RateLimit.hit(key, scale, limit)
       assert {:allow, 2} = RateLimit.hit(key, scale, limit)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit)
+      clean_keys()
     end
 
-    test "with custom increment" do
-      key = "cost-key"
+    test "with custom increment", %{key: key} do
       scale = :timer.seconds(1)
       limit = 10
 
       assert {:allow, 4} = RateLimit.hit(key, scale, limit, 4)
       assert {:allow, 9} = RateLimit.hit(key, scale, limit, 5)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit, 3)
+      clean_keys()
     end
 
-    test "mixing default and custom increment" do
-      key = "cost-key"
+    test "mixing default and custom increment", %{key: key} do
       scale = :timer.seconds(1)
       limit = 10
 
@@ -113,12 +124,12 @@ defmodule Hammer.RedisTest do
       assert {:allow, 9} = RateLimit.hit(key, scale, limit, 4)
       assert {:allow, 10} = RateLimit.hit(key, scale, limit)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit, 2)
+      clean_keys()
     end
   end
 
   describe "inc" do
-    test "increments the count for the given key and scale" do
-      key = "key"
+    test "increments the count for the given key and scale", %{key: key} do
       scale = :timer.seconds(10)
 
       assert RateLimit.get(key, scale) == 0
@@ -134,18 +145,19 @@ defmodule Hammer.RedisTest do
 
       assert RateLimit.inc(key, scale) == 4
       assert RateLimit.get(key, scale) == 4
+      clean_keys()
     end
   end
 
   describe "get/set" do
-    test "get returns the count set for the given key and scale" do
-      key = "key"
+    test "get returns the count set for the given key and scale", %{key: key} do
       scale = :timer.seconds(10)
       count = 10
 
       assert RateLimit.get(key, scale) == 0
       assert RateLimit.set(key, scale, count) == count
       assert RateLimit.get(key, scale) == count
+      clean_keys()
     end
   end
 end
