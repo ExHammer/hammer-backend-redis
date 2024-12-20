@@ -14,8 +14,8 @@ defmodule Hammer.RedisTest do
     {:ok, %{key: key}}
   end
 
-  defp redis_all(conn \\ RateLimit) do
-    keys = Redix.command!(conn, ["KEYS", "Hammer.RedisTest.RateLimit*"])
+  defp redis_all(key, conn \\ RateLimit) do
+    keys = Redix.command!(conn, ["KEYS", "Hammer.RedisTest.RateLimit:#{key}*"])
 
     Enum.map(keys, fn key ->
       {key, Redix.command!(conn, ["GET", key])}
@@ -39,7 +39,7 @@ defmodule Hammer.RedisTest do
 
     RateLimit.hit(key, scale, limit)
 
-    assert [{"Hammer.RedisTest.RateLimit:" <> _, "1"}] = redis_all()
+    assert [{"Hammer.RedisTest.RateLimit:" <> _, "1"}] = redis_all(key)
     clean_keys()
   end
 
@@ -48,7 +48,7 @@ defmodule Hammer.RedisTest do
     limit = 5
 
     RateLimit.hit(key, scale, limit)
-    [{redis_key, "1"}] = redis_all()
+    [{redis_key, "1"}] = redis_all(key)
 
     expected_expiretime = div(System.system_time(:second), 10) * 10 + 10
 
