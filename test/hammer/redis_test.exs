@@ -40,6 +40,7 @@ defmodule Hammer.RedisTest do
     RateLimit.hit(key, scale, limit)
 
     assert [{"Hammer.RedisTest.RateLimit:" <> _, "1"}] = redis_all()
+    clean_keys()
   end
 
   test "key has expirytime set", %{key: key} do
