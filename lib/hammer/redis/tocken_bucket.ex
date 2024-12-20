@@ -150,6 +150,10 @@ defmodule Hammer.Redis.TokenBucket do
     if current_tokens >= cost then
       local final_level = current_tokens - cost
       redis.call("HMSET", KEYS[1], "level", final_level, "last_update", now)
+      -- Set TTL to time needed to refill to capacity plus a small buffer
+      local time_to_full = math.ceil((capacity - final_level) / ARGV[2])
+      local ttl = time_to_full + 60 -- Add 60 second buffer
+      redis.call("EXPIRE", KEYS[1], ttl)
       return {1, final_level} -- Allow with new level
     else
       -- Calculate time until enough tokens available

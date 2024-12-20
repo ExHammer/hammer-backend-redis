@@ -153,7 +153,11 @@ defmodule Hammer.Redis.LeakyBucket do
     if new_level < capacity then
       new_level = new_level + cost
       redis.call("HMSET", KEYS[1], "level", new_level, "last_update", now)
-      return {1, new_level} -- Allow with new level
+      -- Set TTL to time needed to leak current level plus a small buffer
+      local time_to_empty = math.ceil(new_level / ARGV[2])
+      local ttl = time_to_empty + 60 -- Add 60 second buffer
+      redis.call("EXPIRE", KEYS[1], ttl)
+      return {1, new_level}
     else
       -- Calculate time until enough tokens available
       local time_needed = (cost - new_level) / ARGV[2]
