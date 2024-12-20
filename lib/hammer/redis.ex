@@ -31,6 +31,36 @@ defmodule Hammer.Redis do
 
     name = module
 
+    algorithm =
+      case Keyword.get(hammer_opts, :algorithm) do
+        nil ->
+          Hammer.Redis.FixWindow
+
+        :fix_window ->
+          Hammer.Redis.FixWindow
+
+        :sliding_window ->
+          Hammer.Redis.SlidingWindow
+
+        :leaky_bucket ->
+          Hammer.Redis.LeakyBucket
+
+        :token_bucket ->
+          Hammer.Redis.TokenBucket
+
+        _module ->
+          raise ArgumentError, """
+          Hammer requires a valid backend to be specified. Must be one of: :fix_window, :sliding_window, :leaky_bucket, :token_bucket.
+          If none is specified, :fix_window is used.
+
+          Example:
+
+            use Hammer, backend: Hammer.Redis, algorithm: Hammer.Redis.FixWindow
+          """
+      end
+
+    Code.ensure_loaded!(algorithm)
+
     unless is_binary(prefix) do
       raise ArgumentError, """
       Expected `:prefix` value to be a string, got: #{inspect(prefix)}
@@ -54,6 +84,7 @@ defmodule Hammer.Redis do
       @name unquote(name)
       @prefix unquote(prefix)
       @timeout unquote(timeout)
+      @algorithm unquote(algorithm)
 
       @spec child_spec(Keyword.t()) :: Supervisor.child_spec()
       def child_spec(opts) do
@@ -68,23 +99,36 @@ defmodule Hammer.Redis do
               {:ok, pid()} | :ignore | {:error, term()}
       def start_link(opts) do
         opts = Keyword.put(opts, :name, @name)
+
         Hammer.Redis.start_link(opts)
       end
 
       def hit(key, scale, limit, increment \\ 1) do
-        Hammer.Redis.hit(@name, @prefix, key, scale, limit, increment, @timeout)
+        @algorithm.hit(@name, @prefix, key, scale, limit, increment, @timeout)
       end
 
-      def inc(key, scale, increment \\ 1) do
-        Hammer.Redis.inc(@name, @prefix, key, scale, increment, @timeout)
+      if function_exported?(@algorithm, :inc, 6) do
+        def inc(key, scale, increment \\ 1) do
+          @algorithm.inc(@name, @prefix, key, scale, increment, @timeout)
+        end
       end
 
-      def set(key, scale, count) do
-        Hammer.Redis.set(@name, @prefix, key, scale, count, @timeout)
+      if function_exported?(@algorithm, :set, 6) do
+        def set(key, scale, count) do
+          @algorithm.set(@name, @prefix, key, scale, count, @timeout)
+        end
       end
 
-      def get(key, scale) do
-        Hammer.Redis.get(@name, @prefix, key, scale, @timeout)
+      if function_exported?(@algorithm, :get, 4) do
+        def get(key, scale) do
+          @algorithm.get(@name, @prefix, key, @timeout)
+        end
+      end
+
+      if function_exported?(@algorithm, :get, 5) do
+        def get(key, scale) do
+          @algorithm.get(@name, @prefix, key, scale, @timeout)
+        end
       end
     end
   end
@@ -104,118 +148,5 @@ defmodule Hammer.Redis do
       end
 
     Redix.start_link(opts)
-  end
-
-  @doc false
-  @spec hit(
-          Redix.connection(),
-          String.t(),
-          String.t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) ::
-          {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
-  def hit(name, prefix, key, scale, limit, increment, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
-
-    commands = [
-      ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
-    ]
-
-    [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
-
-    if count <= limit do
-      {:allow, count}
-    else
-      {:deny, expires_at - now}
-    end
-  end
-
-  @doc false
-  @spec inc(
-          Redix.connection(),
-          String.t(),
-          String.t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) :: non_neg_integer()
-  def inc(name, prefix, key, scale, increment, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
-
-    commands = [
-      ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
-    ]
-
-    [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
-
-    count
-  end
-
-  @doc false
-  @spec set(
-          Redix.connection(),
-          String.t(),
-          String.t(),
-          non_neg_integer(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) :: non_neg_integer()
-  def set(name, prefix, key, scale, count, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
-
-    commands = [
-      ["SET", full_key, count],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
-    ]
-
-    Redix.pipeline!(name, commands, timeout: timeout)
-
-    count
-  end
-
-  @doc false
-  @spec get(
-          Redix.connection(),
-          String.t(),
-          String.t(),
-          non_neg_integer(),
-          non_neg_integer()
-        ) :: non_neg_integer()
-  def get(name, prefix, key, scale, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    count = Redix.command!(name, ["GET", full_key], timeout: timeout)
-
-    case count do
-      nil -> 0
-      count -> String.to_integer(count)
-    end
-  end
-
-  @compile inline: [redis_key: 3]
-  defp redis_key(prefix, key, window) do
-    "#{prefix}:#{key}:#{window}"
-  end
-
-  @compile inline: [now: 0]
-  defp now do
-    System.system_time(:millisecond)
   end
 end

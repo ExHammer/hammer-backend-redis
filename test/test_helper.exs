@@ -8,6 +8,9 @@ redis_available? = Task.await(task)
 
 exclude =
   if redis_available? do
+    # force flush all keys before running tests
+    {:ok, redix} = Redix.start_link("redis://localhost:6379")
+    Redix.command!(redix, ["FLUSHALL"])
     []
   else
     Mix.shell().error("""

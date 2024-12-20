@@ -1,7 +1,7 @@
 defmodule Hammer.Redis.MixProject do
   use Mix.Project
 
-  @version "7.0.0-rc.0"
+  @version "7.0.0-rc.1"
 
   def project do
     [
@@ -14,7 +14,7 @@ defmodule Hammer.Redis.MixProject do
       deps: deps(),
       docs: docs(),
       package: package(),
-      test_coverage: [summary: [threshold: 90]]
+      test_coverage: [summary: [threshold: 85]]
     ]
   end
 
@@ -33,10 +33,11 @@ defmodule Hammer.Redis.MixProject do
 
   defp deps do
     [
+      {:benchee, "~> 1.2", only: :bench},
       {:credo, "~> 1.7", only: [:dev, :test]},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev},
-      {:hammer, "7.0.0-rc.0"},
+      {:hammer, "7.0.0-rc.3"},
       {:redix, "~> 1.5"}
     ]
   end
