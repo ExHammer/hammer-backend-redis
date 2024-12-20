@@ -129,7 +129,7 @@ defmodule Hammer.Redis.TokenBucket do
     end
   end
 
-  defp redis_script() do
+  defp redis_script do
     """
     -- Get current time in seconds
     local now = redis.call("TIME")[1]
