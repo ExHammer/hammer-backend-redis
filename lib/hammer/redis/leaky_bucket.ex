@@ -13,7 +13,8 @@ defmodule Hammer.Redis.LeakyBucket do
   - If bucket reaches capacity (100), new requests are denied
   - Once bucket level drops, new requests are allowed again
 
-  The algorithm:
+  ## The algorithm:
+
   1. When a request comes in, we:
      - Calculate how much has leaked since last request
      - Subtract leaked amount from current bucket level
@@ -32,7 +33,7 @@ defmodule Hammer.Redis.LeakyBucket do
   - Need to smooth out traffic spikes
   - Want to prevent resource exhaustion
 
-  Common use cases include:
+  ## Common use cases include:
 
   - API rate limiting needing consistent throughput
   - Network traffic shaping
@@ -54,6 +55,17 @@ defmodule Hammer.Redis.LeakyBucket do
   - Can handle bursts of up to 500 requests
   - But long-term average rate won't exceed 100/sec
   - Provides smoother traffic than fixed windows
+
+  ## Example usage:
+
+      defmodule MyApp.RateLimit do
+        use Hammer, backend: Hammer.Redis, algorithm: :leaky_bucket
+      end
+
+      MyApp.RateLimit.start_link(clean_period: :timer.minutes(1))
+
+      # Allow 100 requests/sec leak rate with max capacity of 500
+      MyApp.RateLimit.hit("user_123", 100, 500, 1)
   """
 
   @doc """

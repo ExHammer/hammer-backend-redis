@@ -14,15 +14,16 @@ defmodule Hammer.Redis.TokenBucket do
   - If bucket has enough tokens, request allowed and tokens consumed
   - If not enough tokens, request denied until bucket refills
 
-  The algorithm:
+  ## The algorithm:
+
   1. When a request comes in, we:
-     - Calculate tokens added since last request based on time elapsed
-     - Add new tokens to bucket (up to max capacity)
-     - Try to consume tokens for the request
-     - Store new token count and timestamp
+  - Calculate tokens added since last request based on time elapsed
+  - Add new tokens to bucket (up to max capacity)
+  - Try to consume tokens for the request
+  - Store new token count and timestamp
   2. To check if rate limit is exceeded:
-     - If enough tokens: allow request and consume tokens
-     - If not enough: deny and return time until enough tokens refill
+  - If enough tokens: allow request and consume tokens
+  - If not enough: deny and return time until enough tokens refill
   3. Old entries are automatically cleaned up after expiration
 
   This provides smooth rate limiting with ability to handle bursts up to bucket size.
@@ -33,7 +34,7 @@ defmodule Hammer.Redis.TokenBucket do
   - Need to support different costs for different operations
   - Want to avoid the sharp edges of fixed windows
 
-  Common use cases include:
+  ## Common use cases include:
 
   - API rate limiting with burst tolerance
   - Network traffic shaping
@@ -58,6 +59,16 @@ defmodule Hammer.Redis.TokenBucket do
   - Different operations can cost different amounts
   - More flexible than fixed request counts
 
+  ## Example usage:
+
+      defmodule MyApp.RateLimit do
+      use Hammer, backend: Hammer.Redis, algorithm: :token_bucket
+      end
+
+      MyApp.RateLimit.start_link(clean_period: :timer.minutes(1))
+
+      # Allow 10 tokens per second with max capacity of 100
+      MyApp.RateLimit.hit("user_123", 10, 100, 1)
   """
 
   @doc false

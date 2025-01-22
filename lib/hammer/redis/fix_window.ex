@@ -10,7 +10,8 @@ defmodule Hammer.Redis.FixWindow do
   - Window 2: 60-120 seconds
   - And so on...
 
-  The algorithm:
+  ## The algorithm:
+
   1. When a request comes in, we:
      - Calculate which window it belongs to based on current time
      - Increment the counter for that window
@@ -31,7 +32,7 @@ defmodule Hammer.Redis.FixWindow do
   - You want efficient implementation with minimal storage overhead
   - Your use case can tolerate potential bursts at window boundaries
 
-  Common use cases include:
+  ## Common use cases include:
 
   - Basic API rate limiting where occasional bursts are acceptable
   - Protecting backend services from excessive load
@@ -46,6 +47,16 @@ defmodule Hammer.Redis.FixWindow do
   This results in 200 requests in 2 seconds, while still being within limits.
   If this behavior is problematic, consider using the sliding window algorithm instead.
 
+  ## Example usage:
+
+      defmodule MyApp.RateLimit do
+        use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+      end
+
+      MyApp.RateLimit.start_link(clean_period: :timer.minutes(1))
+
+      # Allow 10 requests per second
+      MyApp.RateLimit.hit("user_123", 1000, 10)
   """
   @doc false
   @spec hit(
