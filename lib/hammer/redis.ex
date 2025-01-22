@@ -15,6 +15,16 @@ defmodule Hammer.Redis do
       {:allow, _count} = MyApp.RateLimit.hit(key, scale, limit)
       {:allow, _count} = MyApp.RateLimit.hit(key, scale, limit, _increment = 1, _timeout = :infinity)
 
+  The Redis backend supports the following algorithms:
+    - `:fix_window` - Fixed window rate limiting (default)
+      Simple counting within fixed time windows. See [Hammer.Redis.FixWindow](Hammer.Redis.FixWindow.html) for more details.
+
+    - `:leaky_bucket` - Leaky bucket rate limiting
+      Smooth rate limiting with a fixed rate of tokens. See [Hammer.Redis.LeakyBucket](Hammer.Redis.LeakyBucket.html) for more details.
+
+    - `:token_bucket` - Token bucket rate limiting
+      Flexible rate limiting with bursting capability. See [Hammer.Redis.TokenBucket](Hammer.Redis.TokenBucket.html) for more details.
+
   """
   # Redix does not define a type for its start options, so we define our
   # own so hopefully redix will be updated to provide a type
