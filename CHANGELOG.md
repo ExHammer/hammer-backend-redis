@@ -1,5 +1,9 @@
 # Changelog
 
+## 7.0.0 - 2025-02-06
+
+- Release candidate for 7.0.0. See [upgrade to v7](https://hexdocs.pm/hammer/upgrade-v7.html) for upgrade instructions.
+
 ## 7.0.0-rc.1 (2024-12-18)
 
 ### Changed
