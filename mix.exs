@@ -1,7 +1,7 @@
 defmodule Hammer.Redis.MixProject do
   use Mix.Project
 
-  @version "7.0.0-rc.1"
+  @version "7.0.0"
 
   def project do
     [
@@ -37,7 +37,7 @@ defmodule Hammer.Redis.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test]},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev},
-      {:hammer, "7.0.0-rc.3"},
+      {:hammer, "~> 7.0"},
       {:redix, "~> 1.5"}
     ]
   end
