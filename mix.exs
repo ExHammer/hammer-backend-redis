@@ -1,7 +1,7 @@
 defmodule Hammer.Redis.MixProject do
   use Mix.Project
 
-  @version "7.0.0"
+  @version "7.0.1"
 
   def project do
     [
