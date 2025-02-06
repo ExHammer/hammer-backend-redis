@@ -1,4 +1,8 @@
 # Changelog
+s
+## 7.0.1 - 2025-02-07
+
+- Fix leaky bucket algorithm to use the correct formula on deny
 
 ## 7.0.0 - 2025-02-06
 

@@ -99,7 +99,7 @@ defmodule Hammer.Redis.LeakyBucket do
     if allowed == 1 do
       {:allow, value}
     else
-      {:deny, 1000}
+      {:deny, value}
     end
   end
 
@@ -172,7 +172,7 @@ defmodule Hammer.Redis.LeakyBucket do
       return {1, new_level}
     else
       -- Calculate time until enough tokens available
-      local time_needed = (cost - new_level) / ARGV[2]
+      local time_needed = (new_level - cost) / ARGV[2]
       return {0, math.ceil(time_needed * 1000)} -- Deny with ms wait time
     end
     """
