@@ -66,7 +66,7 @@ defmodule Hammer.Redis.FixWindow do
           non_neg_integer(),
           non_neg_integer(),
           non_neg_integer(),
-          non_neg_integer()
+          timeout()
         ) ::
           {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(name, prefix, key, scale, limit, increment, timeout) do
@@ -97,7 +97,7 @@ defmodule Hammer.Redis.FixWindow do
           String.t(),
           non_neg_integer(),
           non_neg_integer(),
-          non_neg_integer()
+          timeout()
         ) :: non_neg_integer()
   def inc(name, prefix, key, scale, increment, timeout) do
     now = now()
@@ -123,7 +123,7 @@ defmodule Hammer.Redis.FixWindow do
           String.t(),
           non_neg_integer(),
           non_neg_integer(),
-          non_neg_integer()
+          timeout()
         ) :: non_neg_integer()
   def set(name, prefix, key, scale, count, timeout) do
     now = now()
@@ -147,7 +147,7 @@ defmodule Hammer.Redis.FixWindow do
           String.t(),
           String.t(),
           non_neg_integer(),
-          non_neg_integer()
+          timeout()
         ) :: non_neg_integer()
   def get(name, prefix, key, scale, timeout) do
     now = now()

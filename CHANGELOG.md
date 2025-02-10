@@ -1,5 +1,11 @@
 # Changelog
-s
+
+## 7.0.2 - 2025-02-10
+
+### Changed
+
+- Fix incorrect timeout typespec
+
 ## 7.0.1 - 2025-02-07
 
 - Fix leaky bucket algorithm to use the correct formula on deny
