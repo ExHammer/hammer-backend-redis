@@ -20,6 +20,7 @@
 
 - Added `:algorithm` option to the backend with support for:
   - `:fix_window` (default) - Fixed time window rate limiting
+  - `:sliding_window` - Sliding time window rate limiting
   - `:leaky_bucket` - Constant rate limiting with burst capacity
   - `:token_bucket` - Token-based rate limiting with burst capacity
 - Add benchmarks file and run them with `bench`
