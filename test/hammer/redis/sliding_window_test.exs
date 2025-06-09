@@ -98,8 +98,6 @@ defmodule Hammer.Redis.SlidingWindowTest do
       assert {:allow, 2} = RateLimit.hit(key, scale, limit)
       assert {:deny, wait} = RateLimit.hit(key, scale, limit)
 
-      IO.inspect(wait)
-
       :timer.sleep(wait)
 
       assert {:allow, 1} = RateLimit.hit(key, scale, limit)

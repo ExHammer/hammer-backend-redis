@@ -78,7 +78,7 @@ defmodule Hammer.Redis.SlidingWindow do
         connection_name,
         [
           "EVAL",
-          redis_script(),
+          redis_script(:hit),
           "1",
           full_key,
           window_seconds,
@@ -104,21 +104,26 @@ defmodule Hammer.Redis.SlidingWindow do
           timeout()
         ) :: non_neg_integer()
   def inc(name, prefix, key, scale, increment, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
+    now_ms = now_ms()
+    window_ms = div(now_ms, scale)
+    full_key = redis_key(prefix, key, window_ms)
+    window_seconds = div(window_ms, 1000)
 
-    commands = [
-      ["ZADD", full_key, now, now],
-      # ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
-    ]
+    commands =
+      1..increment
+      |> Enum.map(fn index ->
+        now_microseconds = System.system_time(:microsecond)
+        now_seconds = div(now_microseconds, 1_000_000)
+        ["ZADD", full_key, to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
+      end)
+      |> Enum.concat([
+        ["EXPIRE", full_key, window_seconds],
+        ["ZCARD", full_key]
+      ])
 
-    [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
-
-    count
+    name
+    |> Redix.pipeline!(commands, timeout: timeout)
+    |> List.last()
   end
 
   @doc false
@@ -131,20 +136,26 @@ defmodule Hammer.Redis.SlidingWindow do
           timeout()
         ) :: non_neg_integer()
   def set(name, prefix, key, scale, count, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
+    now_ms = now_ms()
+    window_ms = div(now_ms, scale)
+    full_key = redis_key(prefix, key, window_ms)
+    window_seconds = div(window_ms, 1000)
 
-    commands = [
-      ["ZADD", full_key, now, now],
-      # ["SET", full_key, count],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
-    ]
+    commands =
+      1..count
+      |> Enum.map(fn index ->
+        now_microseconds = System.system_time(:microsecond)
+        now_seconds = div(now_microseconds, 1_000_000)
+        ["ZADD", full_key, to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
+      end)
+      |> Enum.concat([
+        ["EXPIRE", full_key, window_seconds],
+        ["ZCARD", full_key]
+      ])
 
-    Redix.pipeline!(name, commands, timeout: timeout)
-
-    count
+    name
+    |> Redix.pipeline!(commands, timeout: timeout)
+    |> List.last()
   end
 
   @doc false
@@ -156,7 +167,7 @@ defmodule Hammer.Redis.SlidingWindow do
           timeout()
         ) :: non_neg_integer()
   def get(name, prefix, key, scale, timeout) do
-    now = now()
+    now = now_ms()
     window = div(now, scale)
     full_key = redis_key(prefix, key, window)
     count = Redix.command!(name, ["ZCARD", full_key], timeout: timeout)
@@ -169,12 +180,12 @@ defmodule Hammer.Redis.SlidingWindow do
     "#{prefix}:#{key}:#{window}"
   end
 
-  @compile inline: [now: 0]
-  defp now do
+  @compile inline: [now_ms: 0]
+  defp now_ms do
     System.system_time(:millisecond)
   end
 
-  defp redis_script do
+  defp redis_script(:hit) do
     """
     local key = KEYS[1]
     local window = tonumber(ARGV[1])
