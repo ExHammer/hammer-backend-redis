@@ -53,18 +53,13 @@ defmodule Hammer.Redis.SlidingWindow do
   - Fixed window might allow 200 requests across a boundary (100 at 11:59, 100 at 12:00)
   - Sliding window ensures no more than 100 requests in ANY 60 second period
 
-  The sliding window algorithm supports the following options:
-
-  - `:clean_period` - How often to run the cleanup process (in milliseconds)
-    Defaults to 1 minute. The cleanup process removes expired window entries.
-
   ## Example usage:
 
       defmodule MyApp.RateLimit do
         use Hammer, backend: Hammer.Redis, algorithm: :sliding_window
       end
 
-      MyApp.RateLimit.start_link(clean_period: :timer.minutes(1))
+      MyApp.RateLimit.start_link([])
 
       # Allow 10 requests in any 1 second window
       MyApp.RateLimit.hit("user_123", 1000, 10)
