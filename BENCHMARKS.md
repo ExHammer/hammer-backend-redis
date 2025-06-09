@@ -5,10 +5,10 @@ scale: 5000
 range: 10000
 
 Operating System: macOS
-CPU Information: Apple M1 Max
+CPU Information: Apple M1 Pro
 Number of Available Cores: 10
-Available memory: 32 GB
-Elixir 1.17.3
+Available memory: 16 GB
+Elixir 1.18.2
 Erlang 27.1.2
 JIT enabled: true
 
@@ -19,27 +19,31 @@ memory time: 0 ns
 reduction time: 0 ns
 parallel: 500
 inputs: none specified
-Estimated total run time: 1 min
+Estimated total run time: 1 min 20 s
 
 Benchmarking hammer_redis_fix_window ...
 Benchmarking hammer_redis_leaky_bucket ...
+Benchmarking hammer_redis_sliding_window ...
 Benchmarking hammer_redis_token_bucket ...
 Calculating statistics...
 Formatting results...
 
-Name                                ips        average  deviation         median         99th %
-hammer_redis_fix_window          232.75        4.30 ms    ±21.83%        4.31 ms        6.51 ms
-hammer_redis_token_bucket         67.46       14.82 ms    ±13.57%       14.25 ms       19.66 ms
-hammer_redis_leaky_bucket         61.71       16.20 ms    ±54.15%       15.67 ms       31.44 ms
+Name                                  ips        average  deviation         median         99th %
+hammer_redis_sliding_window        266.27        3.76 ms     ±8.11%        3.75 ms        4.74 ms
+hammer_redis_leaky_bucket          259.11        3.86 ms     ±7.28%        3.84 ms        4.70 ms
+hammer_redis_token_bucket          254.97        3.92 ms    ±13.76%        3.78 ms        6.06 ms
+hammer_redis_fix_window            157.78        6.34 ms    ±10.49%        6.32 ms        7.88 ms
 
 Comparison:
-hammer_redis_fix_window          232.75
-hammer_redis_token_bucket         67.46 - 3.45x slower +10.53 ms
-hammer_redis_leaky_bucket         61.71 - 3.77x slower +11.91 ms
+hammer_redis_sliding_window        266.27
+hammer_redis_leaky_bucket          259.11 - 1.03x slower +0.104 ms
+hammer_redis_token_bucket          254.97 - 1.04x slower +0.167 ms
+hammer_redis_fix_window            157.78 - 1.69x slower +2.58 ms
 
 Extended statistics:
 
-Name                              minimum        maximum    sample size                     mode
-hammer_redis_fix_window           1.09 ms        8.88 ms       698.34 K                  4.33 ms
-hammer_redis_token_bucket         1.37 ms       37.16 ms       202.54 K       13.60 ms, 13.19 ms
-hammer_redis_leaky_bucket         3.52 ms      197.32 ms       185.33 K15.38 ms, 15.62 ms, 15.30
+Name                                minimum        maximum    sample size                     mode
+hammer_redis_sliding_window         1.26 ms        6.11 ms       798.95 K                  3.75 ms
+hammer_redis_leaky_bucket           1.99 ms        5.98 ms       777.49 K                  3.76 ms
+hammer_redis_token_bucket           1.97 ms        7.37 ms       765.05 K                  3.69 ms
+hammer_redis_fix_window             1.10 ms       14.11 ms       473.50 K                  6.39 ms
