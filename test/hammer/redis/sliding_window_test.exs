@@ -134,12 +134,13 @@ defmodule Hammer.Redis.SlidingWindowTest do
     test "returns expected tuples on mix of in-limit and out-of-limit checks", %{key: key} do
       scale = :timer.minutes(10)
       limit = 6
-      increment = 3
 
-      assert {:allow, 3} == RateLimit.hit(key, scale, limit, increment)
-      assert {:allow, 6} == RateLimit.hit(key, scale, limit, increment)
-      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
-      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 3} == RateLimit.hit(key, scale, limit, 3)
+      assert {:allow, 5} == RateLimit.hit(key, scale, limit, 2)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, 2)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, 10)
+      assert {:allow, 6} == RateLimit.hit(key, scale, limit, 1)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, 3)
       clean_keys()
     end
 
@@ -187,10 +188,16 @@ defmodule Hammer.Redis.SlidingWindowTest do
     test "get returns the count set for the given key and scale", %{key: key} do
       scale = :timer.seconds(10)
       count = 10
+      new_count = 2
 
       assert RateLimit.get(key, scale) == 0
+
       assert RateLimit.set(key, scale, count) == count
       assert RateLimit.get(key, scale) == count
+
+      assert RateLimit.set(key, scale, new_count) == new_count
+      assert RateLimit.get(key, scale) == new_count
+
       clean_keys()
     end
   end

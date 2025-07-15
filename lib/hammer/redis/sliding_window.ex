@@ -116,17 +116,18 @@ defmodule Hammer.Redis.SlidingWindow do
     full_key = redis_key(prefix, key, window_ms)
     window_seconds = div(window_ms, 1000)
 
-    commands =
-      1..increment
-      |> Enum.map(fn index ->
+    new_members =
+      Enum.map(1..increment, fn index ->
         now_microseconds = System.system_time(:microsecond)
         now_seconds = div(now_microseconds, 1_000_000)
-        ["ZADD", full_key, to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
+        [to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
       end)
-      |> Enum.concat([
-        ["EXPIRE", full_key, window_seconds],
-        ["ZCARD", full_key]
-      ])
+
+    commands = [
+      List.flatten(["ZADD", full_key] ++ new_members),
+      ["EXPIRE", full_key, window_seconds],
+      ["ZCARD", full_key]
+    ]
 
     name
     |> Redix.pipeline!(commands, timeout: timeout)
@@ -142,23 +143,25 @@ defmodule Hammer.Redis.SlidingWindow do
           non_neg_integer(),
           timeout()
         ) :: non_neg_integer()
-  def set(name, prefix, key, scale, count, timeout) do
+  def set(name, prefix, key, scale, increment, timeout) do
     now_ms = now_ms()
     window_ms = div(now_ms, scale)
     full_key = redis_key(prefix, key, window_ms)
     window_seconds = div(window_ms, 1000)
 
-    commands =
-      1..count
-      |> Enum.map(fn index ->
+    new_members =
+      Enum.map(1..increment, fn index ->
         now_microseconds = System.system_time(:microsecond)
         now_seconds = div(now_microseconds, 1_000_000)
-        ["ZADD", full_key, to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
+        [to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
       end)
-      |> Enum.concat([
-        ["EXPIRE", full_key, window_seconds],
-        ["ZCARD", full_key]
-      ])
+
+    commands = [
+      ["ZREMRANGEBYSCORE", full_key, "0", "+inf"],
+      List.flatten(["ZADD", full_key] ++ new_members),
+      ["EXPIRE", full_key, window_seconds],
+      ["ZCARD", full_key]
+    ]
 
     name
     |> Redix.pipeline!(commands, timeout: timeout)
