@@ -58,7 +58,7 @@ defmodule Hammer.Redis.SlidingWindowTest do
     clean_keys()
   end
 
-  describe "hit" do
+  describe "hit when increment == 1" do
     test "returns {:allow, 1} tuple on first access", %{key: key} do
       scale = :timer.seconds(10)
       limit = 10
@@ -103,6 +103,61 @@ defmodule Hammer.Redis.SlidingWindowTest do
       assert {:allow, 1} = RateLimit.hit(key, scale, limit)
       assert {:allow, 2} = RateLimit.hit(key, scale, limit)
       assert {:deny, _wait} = RateLimit.hit(key, scale, limit)
+      clean_keys()
+    end
+  end
+
+  describe "hit when increment > 1" do
+    test "returns {:allow, increment} tuple on first access", %{key: key} do
+      scale = :timer.seconds(10)
+      limit = 10
+      increment = 5
+
+      assert {:allow, increment} == RateLimit.hit(key, scale, limit, increment)
+    end
+
+    test "returns {:allow, tries * increment} tuple on in-limit checks", %{key: key} do
+      scale = :timer.minutes(10)
+      limit = 10
+      increment = 2
+
+      assert {:allow, 2} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 6} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 8} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 10} == RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, _} = RateLimit.hit(key, scale, limit, increment)
+
+      clean_keys()
+    end
+
+    test "returns expected tuples on mix of in-limit and out-of-limit checks", %{key: key} do
+      scale = :timer.minutes(10)
+      limit = 6
+      increment = 3
+
+      assert {:allow, 3} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 6} == RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
+      clean_keys()
+    end
+
+    @tag :slow
+    test "returns expected tuples after waiting for the next window", %{key: key} do
+      scale = :timer.seconds(1)
+      limit = 4
+      increment = 2
+
+      assert {:allow, 2} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, wait} = RateLimit.hit(key, scale, limit, increment)
+
+      :timer.sleep(wait)
+
+      assert {:allow, 2} == RateLimit.hit(key, scale, limit, increment)
+      assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
       clean_keys()
     end
   end

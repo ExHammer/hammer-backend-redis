@@ -75,7 +75,7 @@ defmodule Hammer.Redis.SlidingWindow do
           timeout()
         ) ::
           {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
-  def hit(connection_name, prefix, key, window_ms, limit, _increment, timeout) do
+  def hit(connection_name, prefix, key, window_ms, limit, increment, timeout) do
     full_key = redis_key(prefix, key, window_ms)
     window_seconds = div(window_ms, 1000)
 
@@ -88,7 +88,8 @@ defmodule Hammer.Redis.SlidingWindow do
           "1",
           full_key,
           window_seconds,
-          limit
+          limit,
+          increment
         ],
         timeout: timeout
       )
@@ -196,6 +197,7 @@ defmodule Hammer.Redis.SlidingWindow do
     local key = KEYS[1]
     local window = tonumber(ARGV[1])
     local max_requests = tonumber(ARGV[2])
+    local increment = tonumber(ARGV[3])
 
     local current_time = redis.call("TIME")
     local trim_time = tonumber(current_time[1]) - window
@@ -203,10 +205,14 @@ defmodule Hammer.Redis.SlidingWindow do
     local request_count = redis.call("ZCARD", key) or 0
     request_count = tonumber(request_count)
 
-    if request_count < max_requests then
-      redis.call("ZADD", key, current_time[1], current_time[1] .. current_time[2])
+    if (request_count + increment) <= max_requests then
+      for i = 1,increment,1
+      do
+        redis.call("ZADD", key, current_time[1], current_time[1] .. current_time[2] .. i)
+      end
+
       redis.call("EXPIRE", key, window)
-      return {1, request_count + 1} -- Allow with requests
+      return {1, request_count + increment} -- Allow with requests
     else
       local expire_time = redis.call("EXPIRETIME", key)
       return {0, expire_time - tonumber(current_time[1])} -- Deny with ms wait time
