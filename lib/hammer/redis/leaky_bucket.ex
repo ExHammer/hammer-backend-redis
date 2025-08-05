@@ -62,7 +62,7 @@ defmodule Hammer.Redis.LeakyBucket do
         use Hammer, backend: Hammer.Redis, algorithm: :leaky_bucket
       end
 
-      MyApp.RateLimit.start_link(clean_period: :timer.minutes(1))
+      MyApp.RateLimit.start_link([])
 
       # Allow 100 requests/sec leak rate with max capacity of 500
       MyApp.RateLimit.hit("user_123", 100, 500, 1)

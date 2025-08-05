@@ -19,6 +19,9 @@ defmodule Hammer.Redis do
     - `:fix_window` - Fixed window rate limiting (default)
       Simple counting within fixed time windows. See [Hammer.Redis.FixWindow](Hammer.Redis.FixWindow.html) for more details.
 
+    - `:sliding_window` - Sliding window rate limiting
+      Simple counting within sliding time windows. See [Hammer.Redis.SlidingWindow](Hammer.Redis.SlidingWindow.html) for more details.
+
     - `:leaky_bucket` - Leaky bucket rate limiting
       Smooth rate limiting with a fixed rate of tokens. See [Hammer.Redis.LeakyBucket](Hammer.Redis.LeakyBucket.html) for more details.
 
