@@ -50,6 +50,65 @@ children = [
 And that's it, calls to `MyApp.RateLimit.hit/3` and so on will use Redis to store
 the rate-limit counters. See the [documentation](https://hexdocs.pm/hammer_backend_redis/Hammer.Redis.html) for more details.
 
+## Configuring SSL
+
+Under the hood, Hammer.Redis uses [Redix](https://hexdocs.pm/redix/Redix.html#module-ssl), which supports SSL connections. To configure SSL, you can override the `child_spec/1` function in your rate limiter module. For example:
+
+```elixir
+defmodule MyApp.RateLimit do
+  use Hammer, backend: Hammer.Redis
+
+  @doc """
+  Returns the child specification for starting the Hammer Redis backend.
+
+  It overrides the default child_spec/1 function provided by Hammer macro
+  to configure SSL.
+  """
+  def child_spec(_opts) do
+    env = Application.get_env(:myapp, :environment)
+    host = Application.get_env(:redis, :host)
+    port = Application.get_env(:redis, :port)
+
+    base_opts = [
+      name: __MODULE__,
+      host: host,
+      port: port,
+      timeout: 5000
+    ]
+
+    redis_opts =
+      if env == :prod do
+        base_opts ++
+          [
+            ssl: true,
+            socket_opts: [
+              customize_hostname_check: [
+                match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+              ]
+            ]
+          ]
+      else
+        base_opts
+      end
+
+    %{
+      id: __MODULE__,
+      start: {Hammer.Redis, :start_link, [redis_opts]}
+    }
+  end
+end
+```
+
+And add it to your supervision tree:
+
+```elixir
+children = [
+  # ...
+  MyApp.RateLimit
+  # ... other children
+]
+```
+
 ## Run tests locally
 
 You need a running Redis instance. One can be started locally using `docker compose up -d redis`.
