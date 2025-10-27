@@ -9,3 +9,4 @@ Credits in no special order:
 - [Dave Lively](https://github.com/davelively14)
 - [Emmanuel Pinault](https://github.com/epinault)
 - [ruslandoga](https://github.com/ruslandoga)
+- [rschef](https://github.com/rschef)
