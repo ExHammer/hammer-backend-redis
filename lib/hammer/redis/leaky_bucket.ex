@@ -78,7 +78,7 @@ defmodule Hammer.Redis.LeakyBucket do
           leak_rate :: pos_integer(),
           capacity :: pos_integer(),
           cost :: pos_integer(),
-          timeout :: non_neg_integer()
+          timeout :: timeout()
         ) :: {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(connection_name, prefix, key, leak_rate, capacity, cost, timeout) do
     {:ok, [allowed, value]} =
@@ -110,7 +110,7 @@ defmodule Hammer.Redis.LeakyBucket do
           connection_name :: atom(),
           prefix :: String.t(),
           key :: String.t(),
-          timeout :: non_neg_integer()
+          timeout :: timeout()
         ) ::
           non_neg_integer()
   def get(connection_name, prefix, key, timeout) do
