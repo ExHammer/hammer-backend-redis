@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.1.1 - 2026-04-15
+
+### Fixed
+
+- Use Elixir timeout type in bucket specs
+
 ## 7.1.0 - 2025-08-05
 
 ### Added
