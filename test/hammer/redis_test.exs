@@ -43,6 +43,49 @@ defmodule Hammer.RedisTest do
     clean_keys()
   end
 
+  test "a later hit in the same window does not move the expiry", %{key: key} do
+    scale = :timer.hours(1)
+
+    RateLimit.hit(key, scale, 5)
+    [{redis_key, "1"}] = redis_all(key)
+    first_expiry = Redix.command!(RateLimit, ["EXPIRETIME", redis_key])
+
+    RateLimit.hit(key, scale, 5)
+
+    assert Redix.command!(RateLimit, ["EXPIRETIME", redis_key]) == first_expiry
+    assert first_expiry > System.system_time(:second)
+
+    clean_keys()
+  end
+
+  describe "a Redis command error" do
+    test "raises out of hit/4 instead of denying the request", %{key: key} do
+      scale = :timer.hours(1)
+
+      # A wrong-type value makes Redis answer INCRBY with an error reply, as it does for OOM,
+      # MISCONF and READONLY.
+      Redix.command!(RateLimit, ["SET", full_key(key, scale), "not-an-integer"])
+
+      assert_raise Redix.Error, fn -> RateLimit.hit(key, scale, 5) end
+
+      clean_keys()
+    end
+
+    test "raises out of inc/3 rather than returning the error as a count", %{key: key} do
+      scale = :timer.hours(1)
+
+      Redix.command!(RateLimit, ["SET", full_key(key, scale), "not-an-integer"])
+
+      assert_raise Redix.Error, fn -> RateLimit.inc(key, scale) end
+
+      clean_keys()
+    end
+  end
+
+  defp full_key(key, scale) do
+    "Hammer.RedisTest.RateLimit:#{key}:#{div(System.system_time(:millisecond), scale)}"
+  end
+
   test "key has expirytime set", %{key: key} do
     scale = :timer.seconds(10)
     limit = 5

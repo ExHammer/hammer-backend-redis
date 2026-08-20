@@ -83,11 +83,10 @@ defmodule Hammer.Redis.FixWindow do
 
     commands = [
       ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["EXPIREAT", full_key, div(expires_at, 1000)]
     ]
 
-    [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
+    [count, _] = pipeline!(name, commands, timeout)
 
     if count <= limit do
       {:allow, count}
@@ -113,11 +112,10 @@ defmodule Hammer.Redis.FixWindow do
 
     commands = [
       ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["EXPIREAT", full_key, div(expires_at, 1000)]
     ]
 
-    [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
+    [count, _] = pipeline!(name, commands, timeout)
 
     count
   end
@@ -139,10 +137,10 @@ defmodule Hammer.Redis.FixWindow do
 
     commands = [
       ["SET", full_key, count],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["EXPIREAT", full_key, div(expires_at, 1000)]
     ]
 
-    Redix.pipeline!(name, commands, timeout: timeout)
+    pipeline!(name, commands, timeout)
 
     count
   end
@@ -164,6 +162,17 @@ defmodule Hammer.Redis.FixWindow do
     case count do
       nil -> 0
       count -> String.to_integer(count)
+    end
+  end
+
+  # `Redix.pipeline!/3` raises on connection errors only; a command error is returned as a
+  # `%Redix.Error{}` in the result list.
+  defp pipeline!(name, commands, timeout) do
+    results = Redix.pipeline!(name, commands, timeout: timeout)
+
+    case Enum.find(results, &match?(%Redix.Error{}, &1)) do
+      nil -> results
+      error -> raise error
     end
   end
 
