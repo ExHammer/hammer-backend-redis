@@ -63,6 +63,10 @@ defmodule Hammer.Redis.SlidingWindow do
 
       # Allow 10 requests in any 1 second window
       MyApp.RateLimit.hit("user_123", 1000, 10)
+
+  ## Redis version requirement
+
+  This algorithm relies on the `EXPIRETIME` command, which requires Redis 7.0 or later.
   """
   @doc false
   @spec hit(
