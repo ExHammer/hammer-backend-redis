@@ -32,6 +32,11 @@ jobs:
       matrix:
         include:
           # Latest
+          - elixir: 1.20
+            otp: 29
+          - elixir: 1.20
+            otp: 28
+          # 1.19
           - elixir: 1.19
             otp: 28
           - elixir: 1.19
@@ -83,5 +88,5 @@ jobs:
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: 1
-          otp-version: 27
+          otp-version: 29
       - run: mix format --check-formatted
