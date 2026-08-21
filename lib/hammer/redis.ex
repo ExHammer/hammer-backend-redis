@@ -2,6 +2,13 @@ defmodule Hammer.Redis do
   @moduledoc """
   This backend uses the [Redix](https://hex.pm/packages/redix) library to connect to Redis.
 
+  > #### Redis version requirement {: .warning}
+  >
+  > Redis 7.0 or later is required. The `:fix_window` algorithm relies on `EXPIREAT ... NX` and
+  > the `:sliding_window` algorithm relies on `EXPIRETIME`, both introduced in Redis 7.0. On older
+  > Redis versions these commands fail, so counter keys never expire and the keyspace grows until
+  > Redis runs out of memory.
+
       defmodule MyApp.RateLimit do
         # the default prefix is "MyApp.RateLimit:"
         # the default timeout is :infinity

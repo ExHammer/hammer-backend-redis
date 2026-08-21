@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Document that Redis 7.0+ is required (`EXPIREAT ... NX` and `EXPIRETIME` were introduced in Redis 7.0) (#148)
+
 ## 7.1.1 - 2026-04-15
 
 ### Fixed

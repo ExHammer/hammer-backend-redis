@@ -57,6 +57,12 @@ defmodule Hammer.Redis.FixWindow do
 
       # Allow 10 requests per second
       MyApp.RateLimit.hit("user_123", 1000, 10)
+
+  ## Redis version requirement
+
+  This algorithm sets key expiration with `EXPIREAT ... NX`; the `NX` option requires
+  Redis 7.0 or later. On older Redis versions the command fails, so counter keys never
+  expire and accumulate until Redis runs out of memory.
   """
   @doc false
   @spec hit(
