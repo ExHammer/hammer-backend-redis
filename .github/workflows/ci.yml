@@ -32,9 +32,9 @@ jobs:
       matrix:
         include:
           # Latest
-          - elixir: 1.20
+          - elixir: "1.20"
             otp: 29
-          - elixir: 1.20
+          - elixir: "1.20"
             otp: 28
           # 1.19
           - elixir: 1.19
