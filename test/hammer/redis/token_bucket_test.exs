@@ -91,4 +91,20 @@ defmodule Hammer.Redis.TokenBucketTest do
       assert RateLimitTokenBucket.get(key, refill_rate) == 3
     end
   end
+
+  describe "redis command errors" do
+    test "hit raises Redix.Error on a command error reply", %{key: key} do
+      full_key = "Hammer.Redis.TokenBucketTest.RateLimitTokenBucket:#{key}"
+      Redix.command!(RateLimitTokenBucket, ["SET", full_key, "not-a-hash"])
+
+      assert_raise Redix.Error, fn -> RateLimitTokenBucket.hit(key, 1, 10) end
+    end
+
+    test "get raises Redix.Error instead of returning 0", %{key: key} do
+      full_key = "Hammer.Redis.TokenBucketTest.RateLimitTokenBucket:#{key}"
+      Redix.command!(RateLimitTokenBucket, ["SET", full_key, "not-a-hash"])
+
+      assert_raise Redix.Error, fn -> RateLimitTokenBucket.get(key, 1) end
+    end
+  end
 end

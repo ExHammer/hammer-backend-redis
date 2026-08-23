@@ -154,6 +154,21 @@ defmodule Hammer.Redis do
   end
 
   @doc false
+  @spec pipeline!(Redix.connection(), [Redix.command()], timeout()) :: [term()]
+  def pipeline!(name, commands, timeout) do
+    replies = Redix.pipeline!(name, commands, timeout: timeout)
+
+    # Redix.pipeline! only raises on connection errors; Redis error replies to
+    # individual commands come back as Redix.Error structs in the reply list
+    Enum.each(replies, fn
+      %Redix.Error{} = error -> raise error
+      _reply -> :ok
+    end)
+
+    replies
+  end
+
+  @doc false
   @spec start_link(Hammer.Redis.redis_options()) ::
           {:ok, pid()} | :ignore | {:error, term()}
   def start_link(opts) do

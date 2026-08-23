@@ -161,4 +161,28 @@ defmodule Hammer.RedisTest do
       clean_keys()
     end
   end
+
+  describe "redis command errors" do
+    test "hit raises Redix.Error instead of misreporting a deny", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 10)
+      [{redis_key, _}] = redis_all(key)
+      Redix.command!(RateLimit, ["SET", redis_key, "not-a-number"])
+
+      assert_raise Redix.Error, fn -> RateLimit.hit(key, scale, 10) end
+      clean_keys()
+    end
+
+    test "inc raises Redix.Error instead of returning the error as a count", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert RateLimit.inc(key, scale) == 1
+      [{redis_key, _}] = redis_all(key)
+      Redix.command!(RateLimit, ["SET", redis_key, "not-a-number"])
+
+      assert_raise Redix.Error, fn -> RateLimit.inc(key, scale) end
+      clean_keys()
+    end
+  end
 end
