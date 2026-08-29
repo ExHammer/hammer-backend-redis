@@ -201,4 +201,43 @@ defmodule Hammer.Redis.SlidingWindowTest do
       clean_keys()
     end
   end
+
+  defp poison_keys(key) do
+    keys =
+      Redix.command!(RateLimit, ["KEYS", "Hammer.Redis.SlidingWindowTest.RateLimit:#{key}*"])
+
+    Enum.each(keys, &Redix.command!(RateLimit, ["SET", &1, "not-a-zset"]))
+  end
+
+  describe "redis command errors" do
+    test "hit raises Redix.Error instead of misreporting a deny", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 10)
+      poison_keys(key)
+
+      assert_raise Redix.Error, fn -> RateLimit.hit(key, scale, 10) end
+      clean_keys()
+    end
+
+    test "inc raises Redix.Error instead of returning the error as a count", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert RateLimit.inc(key, scale) == 1
+      poison_keys(key)
+
+      assert_raise Redix.Error, fn -> RateLimit.inc(key, scale) end
+      clean_keys()
+    end
+
+    test "set raises Redix.Error instead of returning the error as a count", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert RateLimit.set(key, scale, 3) == 3
+      poison_keys(key)
+
+      assert_raise Redix.Error, fn -> RateLimit.set(key, scale, 3) end
+      clean_keys()
+    end
+  end
 end

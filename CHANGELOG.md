@@ -6,6 +6,10 @@
 
 - Document that Redis 7.0+ is required (`EXPIREAT ... NX` and `EXPIRETIME` were introduced in Redis 7.0) (#148)
 
+### Fixed
+
+- Raise `Redix.Error` on Redis command error replies instead of silently misinterpreting them as rate-limit results (#147)
+
 ## 7.1.1 - 2026-04-15
 
 ### Fixed

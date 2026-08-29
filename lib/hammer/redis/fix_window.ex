@@ -87,7 +87,7 @@ defmodule Hammer.Redis.FixWindow do
     ]
 
     [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
+      Hammer.Redis.pipeline!(name, commands, timeout)
 
     if count <= limit do
       {:allow, count}
@@ -117,7 +117,7 @@ defmodule Hammer.Redis.FixWindow do
     ]
 
     [count, _] =
-      Redix.pipeline!(name, commands, timeout: timeout)
+      Hammer.Redis.pipeline!(name, commands, timeout)
 
     count
   end
@@ -142,7 +142,7 @@ defmodule Hammer.Redis.FixWindow do
       ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
     ]
 
-    Redix.pipeline!(name, commands, timeout: timeout)
+    Hammer.Redis.pipeline!(name, commands, timeout)
 
     count
   end

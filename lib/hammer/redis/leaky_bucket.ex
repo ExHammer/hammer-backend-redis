@@ -81,20 +81,23 @@ defmodule Hammer.Redis.LeakyBucket do
           timeout :: timeout()
         ) :: {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(connection_name, prefix, key, leak_rate, capacity, cost, timeout) do
-    {:ok, [allowed, value]} =
-      Redix.command(
-        connection_name,
-        [
-          "EVAL",
-          redis_script(),
-          "1",
-          redis_key(prefix, key),
-          capacity,
-          leak_rate,
-          cost
-        ],
-        timeout: timeout
-      )
+    [allowed, value] =
+      case Redix.command(
+             connection_name,
+             [
+               "EVAL",
+               redis_script(),
+               "1",
+               redis_key(prefix, key),
+               capacity,
+               leak_rate,
+               cost
+             ],
+             timeout: timeout
+           ) do
+        {:ok, reply} -> reply
+        {:error, error} -> raise error
+      end
 
     if allowed == 1 do
       {:allow, value}
@@ -132,8 +135,8 @@ defmodule Hammer.Redis.LeakyBucket do
       {:ok, level} ->
         String.to_integer(level)
 
-      _ ->
-        0
+      {:error, error} ->
+        raise error
     end
   end
 

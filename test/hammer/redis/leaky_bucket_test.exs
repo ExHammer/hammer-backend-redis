@@ -88,4 +88,20 @@ defmodule Hammer.Redis.LeakyBucketTest do
       assert RateLimitLeakyBucket.get(key, leak_rate) == 3
     end
   end
+
+  describe "redis command errors" do
+    test "hit raises Redix.Error on a command error reply", %{key: key} do
+      full_key = "Hammer.Redis.LeakyBucketTest.RateLimitLeakyBucket:#{key}"
+      Redix.command!(RateLimitLeakyBucket, ["SET", full_key, "not-a-hash"])
+
+      assert_raise Redix.Error, fn -> RateLimitLeakyBucket.hit(key, 1, 10) end
+    end
+
+    test "get raises Redix.Error instead of returning 0", %{key: key} do
+      full_key = "Hammer.Redis.LeakyBucketTest.RateLimitLeakyBucket:#{key}"
+      Redix.command!(RateLimitLeakyBucket, ["SET", full_key, "not-a-hash"])
+
+      assert_raise Redix.Error, fn -> RateLimitLeakyBucket.get(key, 1) end
+    end
+  end
 end

@@ -83,20 +83,23 @@ defmodule Hammer.Redis.SlidingWindow do
     full_key = redis_key(prefix, key, window_ms)
     window_seconds = div(window_ms, 1000)
 
-    {:ok, [allowed, value]} =
-      Redix.command(
-        connection_name,
-        [
-          "EVAL",
-          redis_script(:hit),
-          "1",
-          full_key,
-          window_seconds,
-          limit,
-          increment
-        ],
-        timeout: timeout
-      )
+    [allowed, value] =
+      case Redix.command(
+             connection_name,
+             [
+               "EVAL",
+               redis_script(:hit),
+               "1",
+               full_key,
+               window_seconds,
+               limit,
+               increment
+             ],
+             timeout: timeout
+           ) do
+        {:ok, reply} -> reply
+        {:error, error} -> raise error
+      end
 
     if allowed == 1 do
       {:allow, value}
@@ -134,7 +137,7 @@ defmodule Hammer.Redis.SlidingWindow do
     ]
 
     name
-    |> Redix.pipeline!(commands, timeout: timeout)
+    |> Hammer.Redis.pipeline!(commands, timeout)
     |> List.last()
   end
 
@@ -168,7 +171,7 @@ defmodule Hammer.Redis.SlidingWindow do
     ]
 
     name
-    |> Redix.pipeline!(commands, timeout: timeout)
+    |> Hammer.Redis.pipeline!(commands, timeout)
     |> List.last()
   end
 
