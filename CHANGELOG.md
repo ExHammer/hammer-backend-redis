@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 7.2.0 - 2026-09-08
 
 ### Changed
 
 - Document that Redis 7.0+ is required (`EXPIREAT ... NX` and `EXPIRETIME` were introduced in Redis 7.0) (#148)
+- Bump `redix` to 1.8.2 and `hammer` to 7.5.0 (#151, #155)
 
 ### Fixed
 
