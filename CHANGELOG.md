@@ -1,5 +1,11 @@
 # Changelog
 
+## 7.2.1 - 2026-09-08
+
+### Changed
+
+- No code changes; re-release of 7.2.0
+
 ## 7.2.0 - 2026-09-08
 
 ### Changed
