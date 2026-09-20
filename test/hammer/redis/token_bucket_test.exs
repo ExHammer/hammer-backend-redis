@@ -58,6 +58,18 @@ defmodule Hammer.Redis.TokenBucketTest do
                RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
     end
 
+    test "returns the retry time computed by Redis", %{key: key} do
+      refill_rate = 1
+      capacity = 10
+
+      assert {:allow, 0} = RateLimitTokenBucket.hit(key, refill_rate, capacity, capacity)
+
+      assert {:deny, retry_after} =
+               RateLimitTokenBucket.hit(key, refill_rate, capacity, capacity)
+
+      assert retry_after > 1000
+    end
+
     test "returns expected tuples after waiting for the next window", %{key: key} do
       refill_rate = 1
       capacity = 2

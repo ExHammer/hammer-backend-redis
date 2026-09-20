@@ -103,7 +103,7 @@ defmodule Hammer.Redis.TokenBucket do
     if allowed == 1 do
       {:allow, value}
     else
-      {:deny, 1000}
+      {:deny, value}
     end
   end
 
