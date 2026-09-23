@@ -89,9 +89,89 @@ defmodule Hammer.Redis.TokenBucketTest do
     end
   end
 
+  describe "millisecond refill" do
+    test "returns a sub-second wait when refill_rate exceeds 1 token/sec", %{key: key} do
+      assert {:allow, 0} = RateLimitTokenBucket.hit(key, 55, 1, 1)
+      assert {:deny, retry_after} = RateLimitTokenBucket.hit(key, 55, 1, 1)
+
+      # ceil(1000 / 55)
+      assert retry_after in 1..19
+    end
+
+    test "sleeping the advertised wait is always sufficient", %{key: key} do
+      for refill_rate <- [1, 3, 7, 55, 100, 333],
+          capacity <- [1, 5],
+          cost <- Enum.uniq([1, capacity]) do
+        key = "#{key}:#{refill_rate}:#{capacity}:#{cost}"
+
+        # At high rates tokens refill between calls, so hit until denied.
+        # Rates are kept low enough that a token takes longer than a round-trip.
+        retry_after = hit_until_denied(key, refill_rate, capacity, cost, 100)
+        assert retry_after >= 1
+
+        :timer.sleep(retry_after)
+
+        assert {:allow, _} = RateLimitTokenBucket.hit(key, refill_rate, capacity, cost),
+               "refill_rate=#{refill_rate} capacity=#{capacity} cost=#{cost} " <>
+                 "slept #{retry_after}ms and was still denied"
+      end
+    end
+
+    test "sustains refill_rate when it exceeds capacity", %{key: key} do
+      refill_rate = 100
+      capacity = 2
+      deadline = System.monotonic_time(:millisecond) + 500
+
+      allowed = drain(key, refill_rate, capacity, deadline, 0)
+
+      # 2 from the initial burst + ~50 refilled in 500ms. Whole-second refill
+      # allowed only the initial burst.
+      assert allowed >= 30
+    end
+
+    test "carries the sub-token remainder across hits", %{key: key} do
+      now = redis_now_ms()
+      seeded = now - 1500
+      seed(key, 0, seeded)
+
+      assert {:allow, 0} = RateLimitTokenBucket.hit(key, 1, 10, 1)
+
+      # One token credited for 1000ms; the remaining ~500ms is kept.
+      assert stored_last_update_ms(key) == seeded + 1000
+    end
+
+    test "snaps the clock to now when the refill overflows the bucket", %{key: key} do
+      seeded = redis_now_ms() - 60_000
+      seed(key, 0, seeded)
+
+      assert {:allow, 4} = RateLimitTokenBucket.hit(key, 1, 5, 1)
+      assert stored_last_update_ms(key) >= seeded + 60_000
+    end
+
+    test "migrates a bucket written with a seconds last_update", %{key: key} do
+      now_s = div(redis_now_ms(), 1000)
+
+      Redix.command!(RateLimitTokenBucket, [
+        "HSET",
+        full_key(key),
+        "level",
+        0,
+        "last_update",
+        now_s - 2
+      ])
+
+      # 2 seconds at 1 token/sec credits 2 tokens, not billions.
+      assert {:allow, 1} = RateLimitTokenBucket.hit(key, 1, 10, 1)
+      assert stored_last_update_ms(key) == (now_s - 2) * 1000 + 2000
+
+      assert Redix.command!(RateLimitTokenBucket, ["HEXISTS", full_key(key), "last_update"]) ==
+               0
+    end
+  end
+
   describe "get" do
     test "get returns the count set for the given key and scale", %{key: key} do
-      refill_rate = :timer.seconds(10)
+      refill_rate = 1
       capacity = 10
 
       assert RateLimitTokenBucket.get(key, refill_rate) == 0
@@ -118,5 +198,55 @@ defmodule Hammer.Redis.TokenBucketTest do
 
       assert_raise Redix.Error, fn -> RateLimitTokenBucket.get(key, 1) end
     end
+  end
+
+  defp drain(key, refill_rate, capacity, deadline, allowed) do
+    if System.monotonic_time(:millisecond) >= deadline do
+      allowed
+    else
+      case RateLimitTokenBucket.hit(key, refill_rate, capacity, 1) do
+        {:allow, _} ->
+          drain(key, refill_rate, capacity, deadline, allowed + 1)
+
+        {:deny, retry_after} ->
+          :timer.sleep(retry_after)
+          drain(key, refill_rate, capacity, deadline, allowed)
+      end
+    end
+  end
+
+  defp hit_until_denied(_key, _refill_rate, _capacity, _cost, 0) do
+    flunk("bucket never denied")
+  end
+
+  defp hit_until_denied(key, refill_rate, capacity, cost, attempts) do
+    case RateLimitTokenBucket.hit(key, refill_rate, capacity, cost) do
+      {:allow, _} -> hit_until_denied(key, refill_rate, capacity, cost, attempts - 1)
+      {:deny, retry_after} -> retry_after
+    end
+  end
+
+  defp full_key(key), do: "Hammer.Redis.TokenBucketTest.RateLimitTokenBucket:#{key}"
+
+  defp redis_now_ms do
+    [s, us] = Redix.command!(RateLimitTokenBucket, ["TIME"])
+    String.to_integer(s) * 1000 + div(String.to_integer(us), 1000)
+  end
+
+  defp seed(key, level, last_update_ms) do
+    Redix.command!(RateLimitTokenBucket, [
+      "HSET",
+      full_key(key),
+      "level",
+      level,
+      "last_update_ms",
+      last_update_ms
+    ])
+  end
+
+  defp stored_last_update_ms(key) do
+    RateLimitTokenBucket
+    |> Redix.command!(["HGET", full_key(key), "last_update_ms"])
+    |> String.to_integer()
   end
 end

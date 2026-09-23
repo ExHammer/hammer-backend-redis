@@ -145,35 +145,64 @@ defmodule Hammer.Redis.TokenBucket do
 
   defp redis_script do
     """
-    -- Get current time in seconds
-    local now = redis.call("TIME")[1]
+    -- Current time in milliseconds. Whole-second resolution only credits
+    -- tokens when the second rolls over, in one lump of refill_rate tokens:
+    -- when refill_rate > capacity the lump overflows and sustained throughput
+    -- is capped at capacity/sec, and a sub-second wait can't be expressed.
+    local time = redis.call("TIME")
+    local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 
-    -- Get current bucket state
-    local bucket = redis.call("HMGET", KEYS[1], "level", "last_update")
-    local current_level = tonumber(bucket[1]) or ARGV[1] -- Default to capacity if new
-    local last_update = tonumber(bucket[2]) or now
+    local capacity = tonumber(ARGV[1])
+    local refill_rate = tonumber(ARGV[2])
+    local cost = tonumber(ARGV[3])
+
+    -- Get current bucket state. Buckets written before the switch to
+    -- milliseconds only carry `last_update` in seconds; convert it once.
+    local bucket = redis.call("HMGET", KEYS[1], "level", "last_update_ms", "last_update")
+    local current_level = tonumber(bucket[1]) or capacity -- Default to capacity if new
+    local last_update = tonumber(bucket[2])
+    if not last_update then
+      local legacy = tonumber(bucket[3])
+      last_update = legacy and legacy * 1000 or now
+    end
 
     -- Calculate tokens to add since last update
-    local elapsed = now - last_update
-    local new_tokens = math.floor(elapsed * ARGV[2]) -- refill_rate per second
-    local capacity = tonumber(ARGV[1])
+    local elapsed = math.max(0, now - last_update)
+    local new_tokens = math.floor(elapsed * refill_rate / 1000)
     local current_tokens = math.min(capacity, current_level + new_tokens)
 
     -- Try to consume tokens
-    local cost = tonumber(ARGV[3])
     if current_tokens >= cost then
       local final_level = current_tokens - cost
-      redis.call("HMSET", KEYS[1], "level", final_level, "last_update", now)
+
+      -- Advance the clock only by the time whose tokens were actually
+      -- credited, so the sub-token remainder carries into the next hit.
+      -- Stamping `now` unconditionally discards it, and a caller hitting
+      -- faster than one token-period would never refill at all.
+      --
+      -- The exception is an overflowing refill: the surplus is legitimately
+      -- discarded, so the clock snaps to `now` or a long-idle bucket banks
+      -- unbounded credit. That only applies when tokens actually accrued.
+      local new_last_update
+      if current_tokens == capacity and new_tokens > 0 then
+        new_last_update = now
+      else
+        new_last_update = last_update + math.floor(new_tokens * 1000 / refill_rate)
+      end
+
+      redis.call("HSET", KEYS[1], "level", final_level, "last_update_ms", new_last_update)
+      redis.call("HDEL", KEYS[1], "last_update")
       -- Set TTL to time needed to refill to capacity plus a small buffer
-      local time_to_full = math.ceil((capacity - final_level) / ARGV[2])
+      local time_to_full = math.ceil((capacity - final_level) / refill_rate)
       local ttl = time_to_full + 60 -- Add 60 second buffer
       redis.call("EXPIRE", KEYS[1], ttl)
       return {1, final_level} -- Allow with new level
     else
-      -- Calculate time until enough tokens available
-      local tokens_needed = cost - current_tokens
-      local time_needed = tokens_needed / ARGV[2]
-      return {0, math.ceil(time_needed * 1000)} -- Deny with ms wait time
+      -- Time in ms until the bucket holds enough tokens to pay `cost`.
+      -- Integer ceiling division so the wait never rounds down into one that
+      -- is still too short, floored at 1ms.
+      local deficit = cost - current_tokens
+      return {0, math.max(math.floor((deficit * 1000 + refill_rate - 1) / refill_rate), 1)}
     end
     """
   end
