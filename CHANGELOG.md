@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Token bucket returns the real time until enough tokens have refilled on deny, instead of a flat `1000` (#160)
+- Token bucket and leaky bucket refill/leak at millisecond resolution instead of whole seconds. A bucket with `refill_rate` greater than `capacity` is no longer capped at `capacity` requests per second, and sub-second retry waits are accurate (#160)
+- Token bucket and leaky bucket carry the sub-token remainder across hits instead of discarding it on every allowed hit, which drained callers hitting faster than one token-period (#160)
+- Leaky bucket deny wait is the time until the level drops below capacity; it was computed from `level - cost` and could be far too long or too short (#160)
+
+### Changed
+
+- Token bucket and leaky bucket store their clock in a new `last_update_ms` hash field. Buckets written by earlier versions (seconds in `last_update`) are converted on their next hit, so no reset happens on upgrade (#160)
+
 ## 7.2.0 - 2026-09-08
 
 ### Changed

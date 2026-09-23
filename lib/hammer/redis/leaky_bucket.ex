@@ -147,36 +147,57 @@ defmodule Hammer.Redis.LeakyBucket do
 
   defp redis_script do
     """
-    -- Get current time in seconds
-    local now = redis.call("TIME")[1]
+    -- Current time in milliseconds. Whole-second resolution only leaks when
+    -- the second rolls over, so a sub-second wait can't be expressed and a
+    -- caller retrying on one is denied until the next second.
+    local time = redis.call("TIME")
+    local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 
-    -- Get current bucket state
-    local bucket = redis.call("HMGET", KEYS[1], "level", "last_update")
-    local current_level = tonumber(bucket[1]) or 0 -- Default to capacity if new
-    local last_update = tonumber(bucket[2]) or now
     local capacity = tonumber(ARGV[1])
-
-    -- Calculate leak amount since last update
-    local elapsed = now - last_update
-    local leak_amount = elapsed * ARGV[2] -- leak_rate per second
-
-    -- Update bucket level
-    local new_level = math.max(0, current_level - leak_amount)
-
-    -- Try to consume tokens
+    local leak_rate = tonumber(ARGV[2])
     local cost = tonumber(ARGV[3])
+
+    -- Get current bucket state. Buckets written before the switch to
+    -- milliseconds only carry `last_update` in seconds; convert it once.
+    local bucket = redis.call("HMGET", KEYS[1], "level", "last_update_ms", "last_update")
+    local current_level = tonumber(bucket[1]) or 0 -- Default to empty if new
+    local last_update = tonumber(bucket[2])
+    if not last_update then
+      local legacy = tonumber(bucket[3])
+      last_update = legacy and legacy * 1000 or now
+    end
+
+    -- Leak whole units only, so the stored level stays an integer
+    local elapsed = math.max(0, now - last_update)
+    local leaked = math.floor(elapsed * leak_rate / 1000)
+    local new_level = math.max(0, current_level - leaked)
+
     if new_level < capacity then
+      -- Advance the clock only by the time whose leak was actually applied,
+      -- so the sub-unit remainder carries into the next hit. When the leak
+      -- drained the bucket the surplus is discarded and the clock snaps to
+      -- `now`, otherwise a long-idle bucket banks unbounded leak.
+      local new_last_update
+      if new_level == 0 and leaked > 0 then
+        new_last_update = now
+      else
+        new_last_update = last_update + math.floor(leaked * 1000 / leak_rate)
+      end
+
       new_level = new_level + cost
-      redis.call("HMSET", KEYS[1], "level", new_level, "last_update", now)
+      redis.call("HSET", KEYS[1], "level", new_level, "last_update_ms", new_last_update)
+      redis.call("HDEL", KEYS[1], "last_update")
       -- Set TTL to time needed to leak current level plus a small buffer
-      local time_to_empty = math.ceil(new_level / ARGV[2])
+      local time_to_empty = math.ceil(new_level / leak_rate)
       local ttl = time_to_empty + 60 -- Add 60 second buffer
       redis.call("EXPIRE", KEYS[1], ttl)
       return {1, new_level}
     else
-      -- Calculate time until enough tokens available
-      local time_needed = (new_level - cost) / ARGV[2]
-      return {0, math.ceil(time_needed * 1000)} -- Deny with ms wait time
+      -- Time in ms until the level drops below capacity, which is when the
+      -- next hit is allowed. Integer ceiling division so the wait never
+      -- rounds down into one that is still too short, floored at 1ms.
+      local excess = new_level - capacity + 1
+      return {0, math.max(math.floor((excess * 1000 + leak_rate - 1) / leak_rate), 1)}
     end
     """
   end
