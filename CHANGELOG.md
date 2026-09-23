@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.2.1 - 2026-09-23
 
 ### Fixed
 
@@ -12,6 +12,7 @@
 ### Changed
 
 - Token bucket and leaky bucket store their clock in a new `last_update_ms` hash field. Buckets written by earlier versions (seconds in `last_update`) are converted on their next hit, so no reset happens on upgrade (#160)
+- Bump `redix` to 1.9.1 (#158, #159)
 
 ## 7.2.0 - 2026-09-08
 
