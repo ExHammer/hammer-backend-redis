@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `hit_many/1` for the token bucket algorithm: checks several buckets in one atomic Redis round trip and consumes tokens only if every bucket allows, returning the longest wait on deny. On Redis Cluster the keys must share a hash tag
+
 ## 7.2.1 - 2026-09-23
 
 ### Fixed
