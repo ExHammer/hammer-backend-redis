@@ -7,6 +7,10 @@ defmodule Hammer.Redis.TokenBucketTest do
     use Hammer, backend: Hammer.Redis, algorithm: :token_bucket
   end
 
+  defmodule RateLimitFixWindow do
+    use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+  end
+
   setup do
     start_supervised!({RateLimitTokenBucket, url: "redis://localhost:6379"})
     key = "key#{:rand.uniform(1_000_000)}"
@@ -166,6 +170,86 @@ defmodule Hammer.Redis.TokenBucketTest do
 
       assert Redix.command!(RateLimitTokenBucket, ["HEXISTS", full_key(key), "last_update"]) ==
                0
+    end
+  end
+
+  describe "hit_many" do
+    test "consumes from every bucket and returns levels in order", %{key: key} do
+      assert {:allow, [4, 8]} =
+               RateLimitTokenBucket.hit_many([{"#{key}:a", 1, 5}, {"#{key}:b", 1, 10, 2}])
+
+      assert RateLimitTokenBucket.get("#{key}:a", 1) == 4
+      assert RateLimitTokenBucket.get("#{key}:b", 1) == 8
+    end
+
+    test "consumes nothing when any bucket denies", %{key: key} do
+      assert {:allow, 0} = RateLimitTokenBucket.hit("#{key}:tight", 1, 1, 1)
+
+      assert {:deny, retry_after} =
+               RateLimitTokenBucket.hit_many([{"#{key}:loose", 1, 10}, {"#{key}:tight", 1, 1}])
+
+      assert retry_after in 1..1000
+      # The allowing bucket was never touched
+      assert RateLimitTokenBucket.get("#{key}:loose", 1) == 0
+      assert {:allow, 9} = RateLimitTokenBucket.hit("#{key}:loose", 1, 10, 1)
+    end
+
+    test "returns the longest wait among the denying buckets", %{key: key} do
+      assert {:allow, [0, 0]} =
+               RateLimitTokenBucket.hit_many([{"#{key}:fast", 10, 1}, {"#{key}:slow", 1, 3, 3}])
+
+      assert {:deny, retry_after} =
+               RateLimitTokenBucket.hit_many([{"#{key}:fast", 10, 1}, {"#{key}:slow", 1, 3, 3}])
+
+      # slow needs 3 tokens at 1/sec; fast needs 1 at 10/sec (100ms)
+      assert retry_after > 2000
+    end
+
+    test "sleeping the advertised wait lets every bucket allow", %{key: key} do
+      buckets = [{"#{key}:burst", 55, 1}, {"#{key}:sustained", 7, 3}]
+
+      assert {:allow, [0, 2]} = RateLimitTokenBucket.hit_many(buckets)
+      assert {:allow, _} = RateLimitTokenBucket.hit_many([{"#{key}:sustained", 7, 3, 2}])
+      assert {:deny, retry_after} = RateLimitTokenBucket.hit_many(buckets)
+
+      :timer.sleep(retry_after)
+
+      assert {:allow, _} = RateLimitTokenBucket.hit_many(buckets)
+    end
+
+    test "a single bucket behaves like hit/4", %{key: key} do
+      assert {:allow, [1]} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
+      assert {:allow, [0]} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
+      assert {:deny, 1000} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
+    end
+
+    test "raises on an empty list" do
+      assert_raise ArgumentError, ~r/at least one bucket/, fn ->
+        RateLimitTokenBucket.hit_many([])
+      end
+    end
+
+    test "raises when a key is listed twice", %{key: key} do
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimitTokenBucket.hit_many([{key, 1, 5}, {key, 1, 10}])
+      end
+    end
+
+    test "raises when two keys map to the same Redis key" do
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimitTokenBucket.hit_many([{1, 1, 5}, {"1", 1, 10}])
+      end
+    end
+
+    test "raises on a malformed bucket", %{key: key} do
+      assert_raise ArgumentError, ~r/expected \{key, refill_rate, capacity\}/, fn ->
+        RateLimitTokenBucket.hit_many([{key, 1}])
+      end
+    end
+
+    test "is only generated for algorithms that support it" do
+      assert function_exported?(RateLimitTokenBucket, :hit_many, 1)
+      refute function_exported?(RateLimitFixWindow, :hit_many, 1)
     end
   end
 
