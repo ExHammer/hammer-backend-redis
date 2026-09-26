@@ -134,8 +134,9 @@ defmodule Hammer.Redis.TokenBucket do
     end
 
     # The script reads every bucket before writing any, so a key listed twice
-    # would be charged twice against the same stale level.
-    keys = Enum.map(buckets, &elem(&1, 0))
+    # would be charged twice against the same stale level. Compare the Redis
+    # keys, since e.g. 1 and "1" interpolate to the same one.
+    keys = Enum.map(buckets, fn {key, _, _, _} -> redis_key(prefix, key) end)
 
     if Enum.uniq(keys) != keys do
       raise ArgumentError, "hit_many/1 got the same key more than once: #{inspect(keys)}"

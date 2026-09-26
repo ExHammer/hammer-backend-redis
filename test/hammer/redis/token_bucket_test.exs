@@ -7,6 +7,10 @@ defmodule Hammer.Redis.TokenBucketTest do
     use Hammer, backend: Hammer.Redis, algorithm: :token_bucket
   end
 
+  defmodule RateLimitFixWindow do
+    use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+  end
+
   setup do
     start_supervised!({RateLimitTokenBucket, url: "redis://localhost:6379"})
     key = "key#{:rand.uniform(1_000_000)}"
@@ -231,6 +235,12 @@ defmodule Hammer.Redis.TokenBucketTest do
       end
     end
 
+    test "raises when two keys map to the same Redis key" do
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimitTokenBucket.hit_many([{1, 1, 5}, {"1", 1, 10}])
+      end
+    end
+
     test "raises on a malformed bucket", %{key: key} do
       assert_raise ArgumentError, ~r/expected \{key, refill_rate, capacity\}/, fn ->
         RateLimitTokenBucket.hit_many([{key, 1}])
@@ -239,9 +249,7 @@ defmodule Hammer.Redis.TokenBucketTest do
 
     test "is only generated for algorithms that support it" do
       assert function_exported?(RateLimitTokenBucket, :hit_many, 1)
-
-      leaky = Code.ensure_loaded!(Hammer.Redis.LeakyBucketTest.RateLimitLeakyBucket)
-      refute function_exported?(leaky, :hit_many, 1)
+      refute function_exported?(RateLimitFixWindow, :hit_many, 1)
     end
   end
 
