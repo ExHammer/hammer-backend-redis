@@ -16,7 +16,7 @@ In other sources it's sometimes called a "fixed window counter".
 ## Requirements
 
 **Redis 7.0 or later is required.** The fixed window algorithm relies on the `NX` option of
-[`EXPIREAT`](https://redis.io/docs/latest/commands/expireat/) and the sliding window algorithm
+[`PEXPIREAT`](https://redis.io/docs/latest/commands/pexpireat/) and the sliding window algorithm
 relies on [`EXPIRETIME`](https://redis.io/docs/latest/commands/expiretime/), both of which were
 introduced in Redis 7.0.
 

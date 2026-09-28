@@ -89,7 +89,7 @@ defmodule Hammer.Redis.FixWindow do
 
   ## Redis version requirement
 
-  This algorithm sets key expiration with `EXPIREAT ... NX`; the `NX` option requires
+  This algorithm sets key expiration with `PEXPIREAT ... NX`; the `NX` option requires
   Redis 7.0 or later. On older Redis versions the command fails, so counter keys never
   expire and accumulate until Redis runs out of memory.
   """
@@ -106,13 +106,11 @@ defmodule Hammer.Redis.FixWindow do
           {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(name, prefix, key, scale, limit, increment, timeout) do
     now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
+    {full_key, expires_at} = window(prefix, key, scale, now)
 
     commands = [
       ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["PEXPIREAT", full_key, expires_at, "NX"]
     ]
 
     [count, _] =
@@ -138,29 +136,31 @@ defmodule Hammer.Redis.FixWindow do
     now = now()
 
     buckets =
-      Hammer.Redis.normalize_buckets!(buckets, ~w(key scale limit increment), fn {key, scale, _,
-                                                                                  _} ->
-        redis_key(prefix, key, div(now, scale))
+      Hammer.Redis.normalize_buckets!(buckets, ~w(key scale limit increment), fn
+        {key, scale, _, _} -> elem(window(prefix, key, scale, now), 0)
       end)
 
-    keys = Enum.map(buckets, &elem(&1, 0))
-
-    args =
-      Enum.flat_map(buckets, fn {_, scale, limit, increment} ->
-        expires_at = (div(now, scale) + 1) * scale
-        [limit, increment, div(expires_at, 1000), expires_at - now]
-      end)
-
-    command = ["EVAL", hit_many_script(), length(keys)] ++ keys ++ args
-
-    case Redix.command(name, command, timeout: timeout) do
-      {:ok, [1 | counts]} -> {:allow, counts}
-      {:ok, [0, wait]} -> {:deny, wait}
-      {:error, error} -> raise error
+    # A window never allows more than `limit`, so a larger increment could
+    # never be allowed and a caller retrying on the returned wait would spin.
+    for {key, _, limit, increment} <- buckets, increment > limit do
+      raise ArgumentError,
+            "hit_many/1 got increment #{increment} greater than limit #{limit} for #{key}, " <>
+              "which can never be allowed"
     end
+
+    Hammer.Redis.eval_many!(
+      name,
+      hit_many_script(),
+      buckets,
+      fn {_, scale, limit, increment} ->
+        expires_at = window_end(scale, now)
+        [limit, increment, expires_at, expires_at - now]
+      end,
+      timeout
+    )
   end
 
-  # Checks every counter in KEYS (with limit, increment, expire_at_seconds,
+  # Checks every counter in KEYS (with limit, increment, expires_at_ms,
   # wait_ms in ARGV) and increments them only if all of them stay within
   # their limit. Returns {1, count_1, ..., count_n} on allow, or {0, wait_ms}
   # with the longest wait among the denying windows.
@@ -190,7 +190,7 @@ defmodule Hammer.Redis.FixWindow do
     local reply = {1}
     for i, key in ipairs(KEYS) do
       reply[i + 1] = redis.call("INCRBY", key, ARGV[4 * i - 2])
-      redis.call("EXPIREAT", key, ARGV[4 * i - 1], "NX")
+      redis.call("PEXPIREAT", key, ARGV[4 * i - 1], "NX")
     end
     return reply
     """
@@ -207,13 +207,11 @@ defmodule Hammer.Redis.FixWindow do
         ) :: non_neg_integer()
   def inc(name, prefix, key, scale, increment, timeout) do
     now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
+    {full_key, expires_at} = window(prefix, key, scale, now)
 
     commands = [
       ["INCRBY", full_key, increment],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["PEXPIREAT", full_key, expires_at, "NX"]
     ]
 
     [count, _] =
@@ -233,13 +231,11 @@ defmodule Hammer.Redis.FixWindow do
         ) :: non_neg_integer()
   def set(name, prefix, key, scale, count, timeout) do
     now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    expires_at = (window + 1) * scale
+    {full_key, expires_at} = window(prefix, key, scale, now)
 
     commands = [
       ["SET", full_key, count],
-      ["EXPIREAT", full_key, div(expires_at, 1000), "NX"]
+      ["PEXPIREAT", full_key, expires_at, "NX"]
     ]
 
     Hammer.Redis.pipeline!(name, commands, timeout)
@@ -256,9 +252,7 @@ defmodule Hammer.Redis.FixWindow do
           timeout()
         ) :: non_neg_integer()
   def get(name, prefix, key, scale, timeout) do
-    now = now()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
+    {full_key, _expires_at} = window(prefix, key, scale, now())
     count = Redix.command!(name, ["GET", full_key], timeout: timeout)
 
     case count do
@@ -267,10 +261,16 @@ defmodule Hammer.Redis.FixWindow do
     end
   end
 
-  @compile inline: [redis_key: 3]
-  defp redis_key(prefix, key, window) do
-    "#{prefix}:#{key}:#{window}"
+  # The Redis key of the window containing `now`, and when that window ends
+  # (ms). The expiry is set with PEXPIREAT: EXPIREAT takes whole seconds, so a
+  # window not ending on a second boundary (any scale that isn't a multiple
+  # of 1000ms) expired early, or at once, and its limit was not enforced.
+  @compile inline: [window: 4, window_end: 2]
+  defp window(prefix, key, scale, now) do
+    {"#{prefix}:#{key}:#{div(now, scale)}", window_end(scale, now)}
   end
+
+  defp window_end(scale, now), do: (div(now, scale) + 1) * scale
 
   @compile inline: [now: 0]
   defp now do

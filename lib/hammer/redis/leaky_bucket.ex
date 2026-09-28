@@ -134,21 +134,10 @@ defmodule Hammer.Redis.LeakyBucket do
   end
 
   defp eval(connection_name, buckets, timeout) do
-    keys = Enum.map(buckets, &elem(&1, 0))
-
-    args =
-      Enum.flat_map(buckets, fn {_, leak_rate, capacity, cost} ->
-        [capacity, leak_rate, cost]
-      end)
-
-    command = ["EVAL", redis_script(), length(keys)] ++ keys ++ args
-
-    case Redix.command(connection_name, command, timeout: timeout) do
-      {:ok, [1 | levels]} -> {:allow, levels}
-      {:ok, [0, wait]} -> {:deny, wait}
-      {:error, error} -> raise error
-    end
+    Hammer.Redis.eval_many!(connection_name, redis_script(), buckets, &script_args/1, timeout)
   end
+
+  defp script_args({_, leak_rate, capacity, cost}), do: [capacity, leak_rate, cost]
 
   @doc """
   Returns the current level of the bucket for a given key.
@@ -240,11 +229,14 @@ defmodule Hammer.Redis.LeakyBucket do
         states[i] = {new_level + cost, new_last_update, leak_rate}
       else
         -- Time in ms until the level drops below capacity, which is when the
-        -- next hit is allowed. Integer ceiling division so the wait never
-        -- rounds down into one that is still too short, floored at 1ms.
+        -- next hit is allowed, counting the time already elapsed towards the
+        -- next leak: leaked + excess units must leak in total since
+        -- last_update. Integer ceiling division, so the wait never rounds down
+        -- into one that is still too short, floored at 1ms.
         local excess = new_level - capacity + 1
-        local bucket_wait = math.max(math.floor((excess * 1000 + leak_rate - 1) / leak_rate), 1)
-        wait = math.max(wait, bucket_wait)
+        local needed = leaked + excess
+        local ready_at = math.floor((needed * 1000 + leak_rate - 1) / leak_rate)
+        wait = math.max(wait, math.max(ready_at - elapsed, 1))
       end
     end
 

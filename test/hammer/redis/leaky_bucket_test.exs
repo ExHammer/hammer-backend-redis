@@ -52,8 +52,11 @@ defmodule Hammer.Redis.LeakyBucketTest do
       assert {:allow, 1} = RateLimitLeakyBucket.hit(key, leak_rate, capacity, 1)
       assert {:allow, 2} = RateLimitLeakyBucket.hit(key, leak_rate, capacity, 1)
 
-      assert {:deny, 1000} =
+      assert {:deny, retry_after} =
                RateLimitLeakyBucket.hit(key, leak_rate, capacity, 1)
+
+      # One unit leaks every 1000ms, less the few ms since the last hit
+      assert retry_after in 900..1000
 
       assert {:deny, _retry_after} =
                RateLimitLeakyBucket.hit(key, leak_rate, capacity, 1)
@@ -112,6 +115,14 @@ defmodule Hammer.Redis.LeakyBucketTest do
                "leak_rate=#{leak_rate} capacity=#{capacity} cost=#{cost} " <>
                  "slept #{retry_after}ms and was still denied"
       end
+    end
+
+    test "the deny wait counts time already elapsed towards the next leak", %{key: key} do
+      seed(key, 1, redis_now_ms() - 900)
+
+      assert {:deny, retry_after} = RateLimitLeakyBucket.hit(key, 1, 1, 1)
+      # 900ms of the 1000ms leak period have already passed
+      assert retry_after in 1..100
     end
 
     test "carries the sub-unit remainder across hits", %{key: key} do
@@ -206,7 +217,8 @@ defmodule Hammer.Redis.LeakyBucketTest do
     test "a single bucket behaves like hit/4", %{key: key} do
       assert {:allow, [1]} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
       assert {:allow, [2]} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
-      assert {:deny, 1000} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
+      assert {:deny, retry_after} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
+      assert retry_after in 900..1000
     end
 
     test "raises on an empty list, duplicate keys and malformed buckets", %{key: key} do
@@ -220,6 +232,10 @@ defmodule Hammer.Redis.LeakyBucketTest do
 
       assert_raise ArgumentError, ~r/expected \{key, leak_rate, capacity\}/, fn ->
         RateLimitLeakyBucket.hit_many([{key, 1}])
+      end
+
+      assert_raise ArgumentError, ~r/positive integer leak_rate/, fn ->
+        RateLimitLeakyBucket.hit_many([{key, 1, 5, 1.5}])
       end
     end
   end
