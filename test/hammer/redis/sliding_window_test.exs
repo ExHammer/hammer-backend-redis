@@ -202,6 +202,148 @@ defmodule Hammer.Redis.SlidingWindowTest do
     end
   end
 
+  describe "one set shared by hit, inc, set and get" do
+    test "get/2 sees hits", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 5)
+      assert {:allow, 2} = RateLimit.hit(key, scale, 5)
+      assert RateLimit.get(key, scale) == 2
+      clean_keys()
+    end
+
+    test "hit/4 counts inc/3 and set/3", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert RateLimit.inc(key, scale, 2) == 2
+      assert {:allow, 3} = RateLimit.hit(key, scale, 5)
+
+      assert RateLimit.set(key, scale, 5) == 5
+      assert {:deny, _} = RateLimit.hit(key, scale, 5)
+      assert RateLimit.get(key, scale) == 5
+      clean_keys()
+    end
+
+    test "set/3 to 0 clears the window", %{key: key} do
+      scale = :timer.hours(1)
+
+      assert RateLimit.inc(key, scale, 3) == 3
+      assert RateLimit.set(key, scale, 0) == 0
+      assert RateLimit.get(key, scale) == 0
+      assert {:allow, 1} = RateLimit.hit(key, scale, 1)
+      clean_keys()
+    end
+
+    test "inc/3 and set/3 expire the set after one window", %{key: key} do
+      scale = :timer.seconds(10)
+
+      RateLimit.inc(key, scale)
+      [{full_key, 1}] = redis_all(key)
+      assert Redix.command!(RateLimit, ["PTTL", full_key]) in 9_000..10_000
+
+      RateLimit.set(key, scale, 3)
+      assert Redix.command!(RateLimit, ["PTTL", full_key]) in 9_000..10_000
+      clean_keys()
+    end
+
+    test "get/2 and inc/3 ignore requests that left the window", %{key: key} do
+      scale = 200
+
+      assert RateLimit.inc(key, scale, 3) == 3
+      :timer.sleep(250)
+
+      assert RateLimit.get(key, scale) == 0
+      assert RateLimit.inc(key, scale) == 1
+      clean_keys()
+    end
+  end
+
+  describe "millisecond precision" do
+    test "a sub-second window is enforced and slides", %{key: key} do
+      scale = 500
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 2)
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      assert {:deny, retry_after} = RateLimit.hit(key, scale, 2)
+      assert retry_after in 1..500
+
+      :timer.sleep(retry_after)
+      assert {:allow, _} = RateLimit.hit(key, scale, 2)
+      clean_keys()
+    end
+
+    test "the deny wait is until the oldest request leaves the window", %{key: key} do
+      scale = 1000
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 2)
+      :timer.sleep(400)
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      assert {:deny, retry_after} = RateLimit.hit(key, scale, 2)
+
+      # The first request leaves the window ~600ms from now, not the second's 1000ms
+      assert retry_after in 500..610
+
+      :timer.sleep(retry_after)
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      clean_keys()
+    end
+
+    test "a larger increment waits for as many requests to leave", %{key: key} do
+      scale = 1000
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 3)
+      :timer.sleep(400)
+      assert {:allow, 3} = RateLimit.hit(key, scale, 3, 2)
+      assert {:deny, retry_after} = RateLimit.hit(key, scale, 3, 2)
+
+      # Two slots are needed, so the second-oldest request (1000ms) must leave
+      assert retry_after in 900..1000
+      clean_keys()
+    end
+
+    test "an increment larger than the limit is denied for a full window", %{key: key} do
+      assert {:deny, 1000} = RateLimit.hit(key, 1000, 2, 3)
+    end
+
+    test "sleeping the advertised wait is always sufficient", %{key: key} do
+      for scale <- [100, 250, 700], limit <- [1, 3] do
+        key = "#{key}:#{scale}:#{limit}"
+
+        for _ <- 1..limit, do: assert({:allow, _} = RateLimit.hit(key, scale, limit))
+        assert {:deny, retry_after} = RateLimit.hit(key, scale, limit)
+
+        :timer.sleep(retry_after)
+        assert {:allow, _} = RateLimit.hit(key, scale, limit)
+      end
+
+      clean_keys()
+    end
+
+    test "rapid hits are each counted", %{key: key} do
+      scale = :timer.hours(1)
+
+      for n <- 1..50, do: assert({:allow, ^n} = RateLimit.hit(key, scale, 100))
+      assert RateLimit.get(key, scale) == 50
+      clean_keys()
+    end
+
+    test "entries written with whole-second scores are still counted", %{key: key} do
+      scale = :timer.hours(1)
+      [now_s, _] = Redix.command!(RateLimit, ["TIME"])
+
+      Redix.command!(RateLimit, [
+        "ZADD",
+        "Hammer.Redis.SlidingWindowTest.RateLimit:#{key}:#{scale}",
+        now_s,
+        "legacy"
+      ])
+
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      assert {:deny, _} = RateLimit.hit(key, scale, 2)
+      clean_keys()
+    end
+  end
+
   defp poison_keys(key) do
     keys =
       Redix.command!(RateLimit, ["KEYS", "Hammer.Redis.SlidingWindowTest.RateLimit:#{key}*"])

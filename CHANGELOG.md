@@ -11,6 +11,13 @@
 
 - Fixed window sets counter expiry with `PEXPIREAT` (milliseconds) instead of `EXPIREAT` (whole seconds). A window that doesn't end on a whole second, i.e. any `scale` that isn't a multiple of 1000ms, expired early or immediately, so its limit was not enforced (#165)
 - Token bucket and leaky bucket deny waits count the time already elapsed towards the next token or leak, instead of overstating the wait by up to one full period (#165)
+- Sliding window `inc/3`, `set/3` and `get/2` used a different Redis key than `hit/4`, so `get/2` never saw hits and `hit/4` ignored `inc/3` and `set/3`. All four now share `hit/4`'s key, so existing `hit/4` data carries over. Keys left by the old `inc/3`/`set/3` are no longer read and expire on their own (#166)
+- Sliding window `inc/3` and `set/3` set a TTL of about two days instead of one window; it is now one window (#166)
+- Sliding window works at millisecond precision. A `scale` under one second set `EXPIRE 0` and deleted the key, and the deny wait was rounded to whole seconds. Entries written by earlier versions (whole-second scores) are still counted (#166)
+- Sliding window deny wait is the time until enough of the oldest requests leave the window, instead of the time until the whole key expires (up to one full window too long) (#166)
+- Sliding window `get/2` and `inc/3` no longer count requests that have left the window (#166)
+- Sliding window hits within the same microsecond were stored under the same member and counted once (#166)
+- Sliding window no longer needs `EXPIRETIME` (#166)
 
 ## 7.2.1 - 2026-09-23
 
