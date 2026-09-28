@@ -7,8 +7,8 @@ defmodule Hammer.Redis.TokenBucketTest do
     use Hammer, backend: Hammer.Redis, algorithm: :token_bucket
   end
 
-  defmodule RateLimitFixWindow do
-    use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+  defmodule RateLimitSlidingWindow do
+    use Hammer, backend: Hammer.Redis, algorithm: :sliding_window
   end
 
   setup do
@@ -249,7 +249,7 @@ defmodule Hammer.Redis.TokenBucketTest do
 
     test "is only generated for algorithms that support it" do
       assert function_exported?(RateLimitTokenBucket, :hit_many, 1)
-      refute function_exported?(RateLimitFixWindow, :hit_many, 1)
+      refute function_exported?(RateLimitSlidingWindow, :hit_many, 1)
     end
   end
 

@@ -4,7 +4,8 @@
 
 ### Added
 
-- `hit_many/1` for the token bucket algorithm: checks several buckets in one atomic Redis round trip and consumes tokens only if every bucket allows, returning the longest wait on deny. On Redis Cluster the keys must share a hash tag
+- `hit_many/1` for the token bucket algorithm: checks several buckets in one atomic Redis round trip and consumes tokens only if every bucket allows, returning the longest wait on deny. On Redis Cluster the keys must share a hash tag (#164)
+- `hit_many/1` for the leaky bucket and fixed window algorithms, with the same all-or-nothing behaviour. Unlike fixed window `hit/4`, a denied `hit_many/1` increments no counter
 
 ## 7.2.1 - 2026-09-23
 

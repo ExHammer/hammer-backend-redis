@@ -129,6 +129,75 @@ defmodule Hammer.RedisTest do
     end
   end
 
+  describe "hit_many" do
+    test "increments every window and returns counts in order", %{key: key} do
+      buckets = [{"#{key}:minute", :timer.minutes(1), 1}, {"#{key}:hour", :timer.hours(1), 6, 2}]
+
+      assert {:allow, [1, 2]} = RateLimit.hit_many(buckets)
+      assert RateLimit.get("#{key}:minute", :timer.minutes(1)) == 1
+      assert RateLimit.get("#{key}:hour", :timer.hours(1)) == 2
+      clean_keys()
+    end
+
+    test "increments nothing when any window denies", %{key: key} do
+      buckets = [{"#{key}:minute", :timer.minutes(1), 1}, {"#{key}:hour", :timer.hours(1), 6}]
+
+      assert {:allow, [1, 1]} = RateLimit.hit_many(buckets)
+      assert {:deny, retry_after} = RateLimit.hit_many(buckets)
+
+      assert retry_after in 1..:timer.minutes(1)
+      # The hour window was not charged for the denied request
+      assert RateLimit.get("#{key}:hour", :timer.hours(1)) == 1
+      clean_keys()
+    end
+
+    test "returns the longest wait among the denying windows", %{key: key} do
+      buckets = [{"#{key}:second", 1000, 1}, {"#{key}:hour", :timer.hours(1), 1}]
+
+      assert {:allow, [1, 1]} = RateLimit.hit_many(buckets)
+      assert {:deny, retry_after} = RateLimit.hit_many(buckets)
+
+      # Both deny; the hour window's wait dominates the one-second window's
+      assert retry_after > 1000
+      clean_keys()
+    end
+
+    test "sets an expiry on the counters", %{key: key} do
+      assert {:allow, [1]} = RateLimit.hit_many([{key, :timer.seconds(10), 5}])
+
+      [{full_key, "1"}] = redis_all(key)
+      assert Redix.command!(RateLimit, ["TTL", full_key]) in 1..10
+      clean_keys()
+    end
+
+    test "a single window behaves like hit/3 until the limit", %{key: key} do
+      scale = :timer.seconds(10)
+
+      assert {:allow, [1]} = RateLimit.hit_many([{key, scale, 2}])
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      assert {:deny, _} = RateLimit.hit_many([{key, scale, 2}])
+      # hit_many does not count the denied request
+      assert RateLimit.get(key, scale) == 2
+      clean_keys()
+    end
+
+    test "raises on an empty list, duplicate keys and malformed buckets", %{key: key} do
+      assert_raise ArgumentError, ~r/at least one bucket/, fn ->
+        RateLimit.hit_many([])
+      end
+
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimit.hit_many([{1, 1000, 5}, {"1", 1000, 10}])
+      end
+
+      assert_raise ArgumentError,
+                   ~r/expected \{key, scale, limit\} or \{key, scale, limit, increment\}/,
+                   fn ->
+                     RateLimit.hit_many([{key, 1000}])
+                   end
+    end
+  end
+
   describe "inc" do
     test "increments the count for the given key and scale", %{key: key} do
       scale = :timer.seconds(10)

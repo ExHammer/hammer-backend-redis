@@ -58,6 +58,35 @@ defmodule Hammer.Redis.FixWindow do
       # Allow 10 requests per second
       MyApp.RateLimit.hit("user_123", 1000, 10)
 
+  ## Hitting several windows at once
+
+  `hit_many/1` checks several counters in a single atomic round trip, and
+  increments them only if every one of them stays within its limit. Use it when
+  one action is subject to more than one limit:
+
+      # 1 SMS per minute and 6 per hour
+      MyApp.RateLimit.hit_many([
+        {"{user_123}:sms:minute", :timer.minutes(1), 1},
+        {"{user_123}:sms:hour", :timer.hours(1), 6}
+      ])
+      # => {:allow, [1, 3]} or {:deny, retry_after_ms}
+
+  Each bucket is `{key, scale, limit}` or `{key, scale, limit, increment}`,
+  with `increment` defaulting to 1. On allow the counts are returned in the
+  same order as the buckets. On deny the wait is the longest one among the
+  denying windows.
+
+  Unlike `hit/4`, which counts a hit even when it is denied, a denied
+  `hit_many/1` increments nothing. Otherwise a request rejected by one limit
+  would still use up the others.
+
+  > #### Redis Cluster {: .warning}
+  >
+  > All keys in one `hit_many/1` call are touched by a single script, so on
+  > Redis Cluster they must hash to the same slot. Wrap the shared part of the
+  > key in a [hash tag](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags),
+  > such as `{user_123}` above, or the call fails with a `CROSSSLOT` error.
+
   ## Redis version requirement
 
   This algorithm sets key expiration with `EXPIREAT ... NX`; the `NX` option requires
@@ -94,6 +123,77 @@ defmodule Hammer.Redis.FixWindow do
     else
       {:deny, expires_at - now}
     end
+  end
+
+  @type bucket ::
+          {key :: String.t(), scale :: pos_integer(), limit :: non_neg_integer()}
+          | {key :: String.t(), scale :: pos_integer(), limit :: non_neg_integer(),
+             increment :: non_neg_integer()}
+
+  @doc false
+  @spec hit_many(Redix.connection(), String.t(), [bucket(), ...], timeout()) ::
+          {:allow, [non_neg_integer()]} | {:deny, non_neg_integer()}
+  def hit_many(name, prefix, buckets, timeout) do
+    # One clock reading for every bucket, so they all see the same instant
+    now = now()
+
+    buckets =
+      Hammer.Redis.normalize_buckets!(buckets, ~w(key scale limit increment), fn {key, scale, _,
+                                                                                  _} ->
+        redis_key(prefix, key, div(now, scale))
+      end)
+
+    keys = Enum.map(buckets, &elem(&1, 0))
+
+    args =
+      Enum.flat_map(buckets, fn {_, scale, limit, increment} ->
+        expires_at = (div(now, scale) + 1) * scale
+        [limit, increment, div(expires_at, 1000), expires_at - now]
+      end)
+
+    command = ["EVAL", hit_many_script(), length(keys)] ++ keys ++ args
+
+    case Redix.command(name, command, timeout: timeout) do
+      {:ok, [1 | counts]} -> {:allow, counts}
+      {:ok, [0, wait]} -> {:deny, wait}
+      {:error, error} -> raise error
+    end
+  end
+
+  # Checks every counter in KEYS (with limit, increment, expire_at_seconds,
+  # wait_ms in ARGV) and increments them only if all of them stay within
+  # their limit. Returns {1, count_1, ..., count_n} on allow, or {0, wait_ms}
+  # with the longest wait among the denying windows.
+  defp hit_many_script do
+    """
+    local denied = false
+    local wait = 0
+
+    -- First pass: check every counter, writing nothing
+    for i, key in ipairs(KEYS) do
+      local limit = tonumber(ARGV[4 * i - 3])
+      local increment = tonumber(ARGV[4 * i - 2])
+      local count = tonumber(redis.call("GET", key)) or 0
+
+      if count + increment > limit then
+        denied = true
+        wait = math.max(wait, tonumber(ARGV[4 * i]))
+      end
+    end
+
+    -- Any denial increments nothing, and the caller waits for the slowest window
+    if denied then
+      return {0, wait}
+    end
+
+    -- Second pass: every counter allowed, increment all of them
+    local reply = {1}
+    for i, key in ipairs(KEYS) do
+      reply[i + 1] = redis.call("INCRBY", key, ARGV[4 * i - 2])
+      redis.call("EXPIREAT", key, ARGV[4 * i - 1], "NX")
+    end
+    return reply
+    """
   end
 
   @doc false

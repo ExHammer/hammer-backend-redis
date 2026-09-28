@@ -35,6 +35,11 @@ defmodule Hammer.Redis do
     - `:token_bucket` - Token bucket rate limiting
       Flexible rate limiting with bursting capability. See [Hammer.Redis.TokenBucket](Hammer.Redis.TokenBucket.html) for more details.
 
+  The `:fix_window`, `:leaky_bucket` and `:token_bucket` algorithms also provide
+  `hit_many/1`, which checks several limits in one atomic round trip and counts
+  the hit against all of them only if every one allows it. See each algorithm's
+  docs for the bucket format.
+
   """
   # Redix does not define a type for its start options, so we define our
   # own so hopefully redix will be updated to provide a type
@@ -157,6 +162,46 @@ defmodule Hammer.Redis do
         end
       end
     end
+  end
+
+  @doc false
+  # Validates the buckets given to `hit_many/1` and returns them as
+  # `{redis_key, arg1, arg2, cost}`, with `cost` defaulting to 1. `names` are
+  # the four tuple elements for error messages, e.g.
+  # ~w(key refill_rate capacity cost).
+  @spec normalize_buckets!(list(), [String.t()], (tuple() -> String.t())) :: [tuple(), ...]
+  def normalize_buckets!(buckets, names, redis_key) do
+    buckets =
+      Enum.map(buckets, fn
+        {key, arg1, arg2} ->
+          {key, arg1, arg2, 1}
+
+        {_key, _arg1, _arg2, _cost} = bucket ->
+          bucket
+
+        other ->
+          raise ArgumentError,
+                "expected {#{Enum.join(Enum.take(names, 3), ", ")}} or " <>
+                  "{#{Enum.join(names, ", ")}}, got: #{inspect(other)}"
+      end)
+
+    if buckets == [] do
+      raise ArgumentError, "hit_many/1 expects at least one bucket"
+    end
+
+    buckets =
+      Enum.map(buckets, fn {_, arg1, arg2, cost} = b -> {redis_key.(b), arg1, arg2, cost} end)
+
+    # The scripts read every bucket before writing any, so a key listed twice
+    # would be charged twice against the same stale state. Compare the Redis
+    # keys, since e.g. 1 and "1" interpolate to the same one.
+    keys = Enum.map(buckets, &elem(&1, 0))
+
+    if Enum.uniq(keys) != keys do
+      raise ArgumentError, "hit_many/1 got the same key more than once: #{inspect(keys)}"
+    end
+
+    buckets
   end
 
   @doc false

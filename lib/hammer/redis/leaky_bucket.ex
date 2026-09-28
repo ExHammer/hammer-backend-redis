@@ -66,6 +66,29 @@ defmodule Hammer.Redis.LeakyBucket do
 
       # Allow 100 requests/sec leak rate with max capacity of 500
       MyApp.RateLimit.hit("user_123", 100, 500, 1)
+
+  ## Hitting several buckets at once
+
+  `hit_many/1` checks several buckets in a single atomic round trip, and adds
+  to them only if every bucket allows the hit:
+
+      MyApp.RateLimit.hit_many([
+        {"{user_123}:burst", 10, 5},
+        {"{user_123}:sustained", 1, 60, 2}
+      ])
+      # => {:allow, [1, 2]} or {:deny, retry_after_ms}
+
+  Each bucket is `{key, leak_rate, capacity}` or
+  `{key, leak_rate, capacity, cost}`, with `cost` defaulting to 1. On allow
+  the levels are returned in the same order as the buckets. On deny nothing is
+  added, and the wait is the longest one among the denying buckets.
+
+  > #### Redis Cluster {: .warning}
+  >
+  > All keys in one `hit_many/1` call are touched by a single script, so on
+  > Redis Cluster they must hash to the same slot. Wrap the shared part of the
+  > key in a [hash tag](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags),
+  > such as `{user_123}` above, or the call fails with a `CROSSSLOT` error.
   """
 
   @doc """
@@ -81,28 +104,49 @@ defmodule Hammer.Redis.LeakyBucket do
           timeout :: timeout()
         ) :: {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(connection_name, prefix, key, leak_rate, capacity, cost, timeout) do
-    [allowed, value] =
-      case Redix.command(
-             connection_name,
-             [
-               "EVAL",
-               redis_script(),
-               "1",
-               redis_key(prefix, key),
-               capacity,
-               leak_rate,
-               cost
-             ],
-             timeout: timeout
-           ) do
-        {:ok, reply} -> reply
-        {:error, error} -> raise error
-      end
+    bucket = {redis_key(prefix, key), leak_rate, capacity, cost}
 
-    if allowed == 1 do
-      {:allow, value}
-    else
-      {:deny, value}
+    case eval(connection_name, [bucket], timeout) do
+      {:allow, [level]} -> {:allow, level}
+      {:deny, wait} -> {:deny, wait}
+    end
+  end
+
+  @type bucket ::
+          {key :: String.t(), leak_rate :: pos_integer(), capacity :: pos_integer()}
+          | {key :: String.t(), leak_rate :: pos_integer(), capacity :: pos_integer(),
+             cost :: pos_integer()}
+
+  @doc false
+  @spec hit_many(
+          connection_name :: atom(),
+          prefix :: String.t(),
+          buckets :: [bucket(), ...],
+          timeout :: timeout()
+        ) :: {:allow, [non_neg_integer()]} | {:deny, non_neg_integer()}
+  def hit_many(connection_name, prefix, buckets, timeout) do
+    buckets =
+      Hammer.Redis.normalize_buckets!(buckets, ~w(key leak_rate capacity cost), fn {key, _, _, _} ->
+        redis_key(prefix, key)
+      end)
+
+    eval(connection_name, buckets, timeout)
+  end
+
+  defp eval(connection_name, buckets, timeout) do
+    keys = Enum.map(buckets, &elem(&1, 0))
+
+    args =
+      Enum.flat_map(buckets, fn {_, leak_rate, capacity, cost} ->
+        [capacity, leak_rate, cost]
+      end)
+
+    command = ["EVAL", redis_script(), length(keys)] ++ keys ++ args
+
+    case Redix.command(connection_name, command, timeout: timeout) do
+      {:ok, [1 | levels]} -> {:allow, levels}
+      {:ok, [0, wait]} -> {:deny, wait}
+      {:error, error} -> raise error
     end
   end
 
@@ -145,6 +189,10 @@ defmodule Hammer.Redis.LeakyBucket do
     "#{prefix}:#{key}"
   end
 
+  # Checks every bucket in KEYS (with capacity, leak_rate, cost triples in
+  # ARGV) and adds to them only if all of them allow. Returns
+  # {1, level_1, ..., level_n} on allow, or {0, wait_ms} with the longest wait
+  # among the denying buckets. A single hit is the one-bucket case.
   defp redis_script do
     """
     -- Current time in milliseconds. Whole-second resolution only leaks when
@@ -153,52 +201,70 @@ defmodule Hammer.Redis.LeakyBucket do
     local time = redis.call("TIME")
     local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 
-    local capacity = tonumber(ARGV[1])
-    local leak_rate = tonumber(ARGV[2])
-    local cost = tonumber(ARGV[3])
+    local states = {}
+    local wait = 0
 
-    -- Get current bucket state. Buckets written before the switch to
-    -- milliseconds only carry `last_update` in seconds; convert it once.
-    local bucket = redis.call("HMGET", KEYS[1], "level", "last_update_ms", "last_update")
-    local current_level = tonumber(bucket[1]) or 0 -- Default to empty if new
-    local last_update = tonumber(bucket[2])
-    if not last_update then
-      local legacy = tonumber(bucket[3])
-      last_update = legacy and legacy * 1000 or now
-    end
+    -- First pass: leak every bucket and check it, writing nothing
+    for i, key in ipairs(KEYS) do
+      local capacity = tonumber(ARGV[3 * i - 2])
+      local leak_rate = tonumber(ARGV[3 * i - 1])
+      local cost = tonumber(ARGV[3 * i])
 
-    -- Leak whole units only, so the stored level stays an integer
-    local elapsed = math.max(0, now - last_update)
-    local leaked = math.floor(elapsed * leak_rate / 1000)
-    local new_level = math.max(0, current_level - leaked)
-
-    if new_level < capacity then
-      -- Advance the clock only by the time whose leak was actually applied,
-      -- so the sub-unit remainder carries into the next hit. When the leak
-      -- drained the bucket the surplus is discarded and the clock snaps to
-      -- `now`, otherwise a long-idle bucket banks unbounded leak.
-      local new_last_update
-      if new_level == 0 and leaked > 0 then
-        new_last_update = now
-      else
-        new_last_update = last_update + math.floor(leaked * 1000 / leak_rate)
+      -- Buckets written before the switch to milliseconds only carry
+      -- `last_update` in seconds; convert it once.
+      local bucket = redis.call("HMGET", key, "level", "last_update_ms", "last_update")
+      local current_level = tonumber(bucket[1]) or 0 -- Default to empty if new
+      local last_update = tonumber(bucket[2])
+      if not last_update then
+        local legacy = tonumber(bucket[3])
+        last_update = legacy and legacy * 1000 or now
       end
 
-      new_level = new_level + cost
-      redis.call("HSET", KEYS[1], "level", new_level, "last_update_ms", new_last_update)
-      redis.call("HDEL", KEYS[1], "last_update")
+      -- Leak whole units only, so the stored level stays an integer
+      local elapsed = math.max(0, now - last_update)
+      local leaked = math.floor(elapsed * leak_rate / 1000)
+      local new_level = math.max(0, current_level - leaked)
+
+      if new_level < capacity then
+        -- Advance the clock only by the time whose leak was actually applied,
+        -- so the sub-unit remainder carries into the next hit. When the leak
+        -- drained the bucket the surplus is discarded and the clock snaps to
+        -- `now`, otherwise a long-idle bucket banks unbounded leak.
+        local new_last_update
+        if new_level == 0 and leaked > 0 then
+          new_last_update = now
+        else
+          new_last_update = last_update + math.floor(leaked * 1000 / leak_rate)
+        end
+
+        states[i] = {new_level + cost, new_last_update, leak_rate}
+      else
+        -- Time in ms until the level drops below capacity, which is when the
+        -- next hit is allowed. Integer ceiling division so the wait never
+        -- rounds down into one that is still too short, floored at 1ms.
+        local excess = new_level - capacity + 1
+        local bucket_wait = math.max(math.floor((excess * 1000 + leak_rate - 1) / leak_rate), 1)
+        wait = math.max(wait, bucket_wait)
+      end
+    end
+
+    -- Any denial adds nothing, and the caller waits for the slowest bucket
+    if wait > 0 then
+      return {0, wait}
+    end
+
+    -- Second pass: every bucket allowed, add to all of them
+    local reply = {1}
+    for i, key in ipairs(KEYS) do
+      local new_level, new_last_update, leak_rate = unpack(states[i])
+      redis.call("HSET", key, "level", new_level, "last_update_ms", new_last_update)
+      redis.call("HDEL", key, "last_update")
       -- Set TTL to time needed to leak current level plus a small buffer
       local time_to_empty = math.ceil(new_level / leak_rate)
-      local ttl = time_to_empty + 60 -- Add 60 second buffer
-      redis.call("EXPIRE", KEYS[1], ttl)
-      return {1, new_level}
-    else
-      -- Time in ms until the level drops below capacity, which is when the
-      -- next hit is allowed. Integer ceiling division so the wait never
-      -- rounds down into one that is still too short, floored at 1ms.
-      local excess = new_level - capacity + 1
-      return {0, math.max(math.floor((excess * 1000 + leak_rate - 1) / leak_rate), 1)}
+      redis.call("EXPIRE", key, time_to_empty + 60) -- Add 60 second buffer
+      reply[i + 1] = new_level
     end
+    return reply
     """
   end
 end

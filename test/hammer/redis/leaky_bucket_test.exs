@@ -160,6 +160,70 @@ defmodule Hammer.Redis.LeakyBucketTest do
     end
   end
 
+  describe "hit_many" do
+    test "adds to every bucket and returns levels in order", %{key: key} do
+      assert {:allow, [1, 2]} =
+               RateLimitLeakyBucket.hit_many([{"#{key}:a", 1, 5}, {"#{key}:b", 1, 10, 2}])
+
+      assert RateLimitLeakyBucket.get("#{key}:a", 1) == 1
+      assert RateLimitLeakyBucket.get("#{key}:b", 1) == 2
+    end
+
+    test "adds nothing when any bucket denies", %{key: key} do
+      assert {:allow, 1} = RateLimitLeakyBucket.hit("#{key}:tight", 1, 1, 1)
+
+      assert {:deny, retry_after} =
+               RateLimitLeakyBucket.hit_many([{"#{key}:loose", 1, 10}, {"#{key}:tight", 1, 1}])
+
+      assert retry_after in 1..1000
+      # The allowing bucket was never touched
+      assert RateLimitLeakyBucket.get("#{key}:loose", 1) == 0
+    end
+
+    test "returns the longest wait among the denying buckets", %{key: key} do
+      seed(key <> ":fast", 1, redis_now_ms())
+      seed(key <> ":slow", 3, redis_now_ms())
+
+      assert {:deny, retry_after} =
+               RateLimitLeakyBucket.hit_many([{"#{key}:fast", 10, 1}, {"#{key}:slow", 1, 1}])
+
+      # slow must leak 3 units at 1/sec; fast 1 unit at 10/sec (100ms)
+      assert retry_after > 2000
+    end
+
+    test "sleeping the advertised wait lets every bucket allow", %{key: key} do
+      buckets = [{"#{key}:burst", 55, 1}, {"#{key}:sustained", 7, 2}]
+
+      assert {:allow, [1, 1]} = RateLimitLeakyBucket.hit_many(buckets)
+      assert {:allow, _} = RateLimitLeakyBucket.hit_many([{"#{key}:sustained", 7, 2, 2}])
+      assert {:deny, retry_after} = RateLimitLeakyBucket.hit_many(buckets)
+
+      :timer.sleep(retry_after)
+
+      assert {:allow, _} = RateLimitLeakyBucket.hit_many(buckets)
+    end
+
+    test "a single bucket behaves like hit/4", %{key: key} do
+      assert {:allow, [1]} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
+      assert {:allow, [2]} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
+      assert {:deny, 1000} = RateLimitLeakyBucket.hit_many([{key, 1, 2}])
+    end
+
+    test "raises on an empty list, duplicate keys and malformed buckets", %{key: key} do
+      assert_raise ArgumentError, ~r/at least one bucket/, fn ->
+        RateLimitLeakyBucket.hit_many([])
+      end
+
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimitLeakyBucket.hit_many([{1, 1, 5}, {"1", 1, 10}])
+      end
+
+      assert_raise ArgumentError, ~r/expected \{key, leak_rate, capacity\}/, fn ->
+        RateLimitLeakyBucket.hit_many([{key, 1}])
+      end
+    end
+  end
+
   describe "get" do
     test "get returns the count set for the given key and scale", %{key: key} do
       leak_rate = :timer.seconds(10)
