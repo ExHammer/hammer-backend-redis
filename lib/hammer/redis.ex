@@ -127,6 +127,12 @@ defmodule Hammer.Redis do
         @algorithm.hit(@name, @prefix, key, scale, limit, increment, @timeout)
       end
 
+      if function_exported?(@algorithm, :hit_many, 4) do
+        def hit_many(buckets) do
+          @algorithm.hit_many(@name, @prefix, buckets, @timeout)
+        end
+      end
+
       if function_exported?(@algorithm, :inc, 6) do
         def inc(key, scale, increment \\ 1) do
           @algorithm.inc(@name, @prefix, key, scale, increment, @timeout)
