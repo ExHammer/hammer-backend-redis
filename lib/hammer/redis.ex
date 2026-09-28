@@ -35,10 +35,25 @@ defmodule Hammer.Redis do
     - `:token_bucket` - Token bucket rate limiting
       Flexible rate limiting with bursting capability. See [Hammer.Redis.TokenBucket](Hammer.Redis.TokenBucket.html) for more details.
 
+  ## Checking several limits at once
+
   The `:fix_window`, `:leaky_bucket` and `:token_bucket` algorithms also provide
   `hit_many/1`, which checks several limits in one atomic round trip and counts
-  the hit against all of them only if every one allows it. See each algorithm's
-  docs for the bucket format.
+  the hit against all of them only if every one allows it:
+
+      # with algorithm: :fix_window, 1 SMS per minute and 6 per hour
+      {:allow, [_minute_count, _hour_count]} =
+        MyApp.RateLimit.hit_many([
+          {"{user_123}:sms:minute", :timer.minutes(1), 1},
+          {"{user_123}:sms:hour", :timer.hours(1), 6}
+        ])
+
+  On deny it returns `{:deny, retry_after_ms}` and counts nothing. Each
+  algorithm's docs describe its bucket tuple:
+  [FixWindow](Hammer.Redis.FixWindow.html#module-hitting-several-windows-at-once),
+  [TokenBucket](Hammer.Redis.TokenBucket.html#module-hitting-several-buckets-at-once),
+  [LeakyBucket](Hammer.Redis.LeakyBucket.html#module-hitting-several-buckets-at-once).
+  On Redis Cluster, all keys in one call must share a hash tag such as `{user_123}`.
 
   """
   # Redix does not define a type for its start options, so we define our

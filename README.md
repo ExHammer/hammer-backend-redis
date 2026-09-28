@@ -59,6 +59,51 @@ children = [
 And that's it, calls to `MyApp.RateLimit.hit/3` and so on will use Redis to store
 the rate-limit counters. See the [documentation](https://hexdocs.pm/hammer_backend_redis/Hammer.Redis.html) for more details.
 
+## Checking several limits at once
+
+When one action is subject to more than one limit, such as 1 SMS per minute and
+6 SMS per hour, use `hit_many/1` instead of calling `hit` for each limit. It
+checks every limit in a single atomic Redis round trip, and counts the hit
+against all of them only if every one allows it:
+
+```elixir
+defmodule MyApp.SmsLimit do
+  use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+end
+
+case MyApp.SmsLimit.hit_many([
+       {"{user_123}:sms:minute", :timer.minutes(1), 1},
+       {"{user_123}:sms:hour", :timer.hours(1), 6}
+     ]) do
+  {:allow, [_minute_count, _hour_count]} -> send_sms()
+  {:deny, retry_after_ms} -> {:error, :rate_limited, retry_after_ms}
+end
+```
+
+- On allow, you get one count (or bucket level) per limit, in the order given.
+- On deny, nothing is counted, and `retry_after_ms` is the longest wait among the
+  limits that denied, so retrying after it passes all of them.
+- A key may appear only once per call.
+
+`hit_many/1` is available for the `:fix_window`, `:token_bucket` and
+`:leaky_bucket` algorithms. Each limit is a tuple with the same arguments as that
+algorithm's `hit`:
+
+| Algorithm       | Tuple                                                                |
+| --------------- | -------------------------------------------------------------------- |
+| `:fix_window`   | `{key, scale_ms, limit}` or `{key, scale_ms, limit, increment}`      |
+| `:token_bucket` | `{key, refill_rate, capacity}` or `{key, refill_rate, capacity, cost}` |
+| `:leaky_bucket` | `{key, leak_rate, capacity}` or `{key, leak_rate, capacity, cost}`   |
+
+With `:fix_window`, `hit/3` counts a request even when it is denied, but a denied
+`hit_many/1` counts nothing. Otherwise a request rejected by the minute limit
+would still use up the hourly one.
+
+**Redis Cluster:** all keys in one `hit_many/1` call must hash to the same slot.
+Put the shared part of the key in a
+[hash tag](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags),
+like `{user_123}` above, or the call fails with a `CROSSSLOT` error.
+
 ## Configuring SSL
 
 Under the hood, Hammer.Redis uses [Redix](https://hexdocs.pm/redix/Redix.html#module-ssl), which supports SSL connections. To configure SSL, pass the SSL options directly when starting the rate limiter. For example:
