@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.3.0 - 2026-09-30
 
 ### Added
 
@@ -18,6 +18,10 @@
 - Sliding window `get/2` and `inc/3` no longer count requests that have left the window (#166)
 - Sliding window hits within the same microsecond were stored under the same member and counted once (#166)
 - Sliding window no longer needs `EXPIRETIME` (#166)
+
+### Changed
+
+- Bump `redix` to 1.9.2 (#161)
 
 ## 7.2.1 - 2026-09-23
 
