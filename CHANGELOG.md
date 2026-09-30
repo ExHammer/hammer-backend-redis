@@ -4,7 +4,13 @@
 
 ### Added
 
-- `hit_many/1` for the token bucket algorithm: checks several buckets in one atomic Redis round trip and consumes tokens only if every bucket allows, returning the longest wait on deny. On Redis Cluster the keys must share a hash tag
+- `hit_many/1` for the token bucket algorithm: checks several buckets in one atomic Redis round trip and consumes tokens only if every bucket allows, returning the longest wait on deny. On Redis Cluster the keys must share a hash tag (#164)
+- `hit_many/1` for the leaky bucket and fixed window algorithms, with the same all-or-nothing behaviour. Unlike fixed window `hit/4`, a denied `hit_many/1` increments no counter
+
+### Fixed
+
+- Fixed window sets counter expiry with `PEXPIREAT` (milliseconds) instead of `EXPIREAT` (whole seconds). A window that doesn't end on a whole second, i.e. any `scale` that isn't a multiple of 1000ms, expired early or immediately, so its limit was not enforced (#165)
+- Token bucket and leaky bucket deny waits count the time already elapsed towards the next token or leak, instead of overstating the wait by up to one full period (#165)
 
 ## 7.2.1 - 2026-09-23
 

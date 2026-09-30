@@ -129,6 +129,133 @@ defmodule Hammer.RedisTest do
     end
   end
 
+  describe "hit_many" do
+    test "increments every window and returns counts in order", %{key: key} do
+      # Hour and day windows so the get/2 calls land in the same windows
+      buckets = [{"#{key}:hour", :timer.hours(1), 1}, {"#{key}:day", :timer.hours(24), 6, 2}]
+
+      assert {:allow, [1, 2]} = RateLimit.hit_many(buckets)
+      assert RateLimit.get("#{key}:hour", :timer.hours(1)) == 1
+      assert RateLimit.get("#{key}:day", :timer.hours(24)) == 2
+      clean_keys()
+    end
+
+    test "increments nothing when any window denies", %{key: key} do
+      # Day-long windows so the two calls can't straddle a window boundary
+      day = :timer.hours(24)
+      buckets = [{"#{key}:tight", day, 1}, {"#{key}:loose", day, 6}]
+
+      assert {:allow, [1, 1]} = RateLimit.hit_many(buckets)
+      assert {:deny, retry_after} = RateLimit.hit_many(buckets)
+
+      assert retry_after in 1..day
+      # The loose window was not charged for the denied request
+      assert RateLimit.get("#{key}:loose", day) == 1
+      clean_keys()
+    end
+
+    test "returns the longest wait among the denying windows", %{key: key} do
+      # Both windows are denied by the second call; the longer wait wins.
+      # Hour and day windows can't be crossed between the two calls.
+      buckets = [{"#{key}:short", :timer.hours(1), 1}, {"#{key}:long", :timer.hours(24), 1}]
+
+      assert {:allow, [1, 1]} = RateLimit.hit_many(buckets)
+      assert {:deny, retry_after} = RateLimit.hit_many(buckets)
+
+      now = System.system_time(:millisecond)
+      hour_left = :timer.hours(1) - rem(now, :timer.hours(1))
+      day_left = :timer.hours(24) - rem(now, :timer.hours(24))
+      assert_in_delta retry_after, max(hour_left, day_left), 1000
+      clean_keys()
+    end
+
+    test "sets an expiry on the counters", %{key: key} do
+      scale = :timer.seconds(10)
+      assert {:allow, [1]} = RateLimit.hit_many([{key, scale, 5}])
+
+      [{full_key, "1"}] = redis_all(key)
+      now = System.system_time(:millisecond)
+      # PEXPIRETIME is the exact window end in ms, so no rounding near the end
+      assert_in_delta Redix.command!(RateLimit, ["PEXPIRETIME", full_key]),
+                      (div(now, scale) + 1) * scale,
+                      5
+
+      clean_keys()
+    end
+
+    test "a single window behaves like hit/3 until the limit", %{key: key} do
+      scale = :timer.hours(24)
+
+      assert {:allow, [1]} = RateLimit.hit_many([{key, scale, 2}])
+      assert {:allow, 2} = RateLimit.hit(key, scale, 2)
+      assert {:deny, _} = RateLimit.hit_many([{key, scale, 2}])
+      # hit_many does not count the denied request
+      assert RateLimit.get(key, scale) == 2
+      clean_keys()
+    end
+
+    test "raises on an empty list, duplicate keys and malformed buckets", %{key: key} do
+      assert_raise ArgumentError, ~r/at least one bucket/, fn ->
+        RateLimit.hit_many([])
+      end
+
+      assert_raise ArgumentError, ~r/same key more than once/, fn ->
+        RateLimit.hit_many([{1, 1000, 5}, {"1", 1000, 10}])
+      end
+
+      assert_raise ArgumentError,
+                   ~r/expected \{key, scale, limit\} or \{key, scale, limit, increment\}/,
+                   fn ->
+                     RateLimit.hit_many([{key, 1000}])
+                   end
+
+      for bad <- [{key, 1000, 5, 1.5}, {key, 0, 5}, {key, 1000, -1}, {key, 1000, 5, -1}] do
+        assert_raise ArgumentError, ~r/positive integer scale/, fn ->
+          RateLimit.hit_many([bad])
+        end
+      end
+
+      assert_raise ArgumentError, ~r/greater than limit/, fn ->
+        RateLimit.hit_many([{key, 1000, 5, 6}])
+      end
+    end
+  end
+
+  describe "sub-second windows" do
+    test "hit/3 enforces a window that doesn't end on a whole second", %{key: key} do
+      scale = 500
+      wait_for_half_second_window()
+
+      assert {:allow, 1} = RateLimit.hit(key, scale, 1)
+      [{full_key, "1"}] = redis_all(key)
+      now = System.system_time(:millisecond)
+
+      assert_in_delta Redix.command!(RateLimit, ["PEXPIRETIME", full_key]),
+                      (div(now, scale) + 1) * scale,
+                      5
+
+      assert {:deny, _} = RateLimit.hit(key, scale, 1)
+      clean_keys()
+    end
+
+    test "hit_many/1 enforces a window that doesn't end on a whole second", %{key: key} do
+      scale = 500
+      wait_for_half_second_window()
+
+      assert {:allow, [1]} = RateLimit.hit_many([{key, scale, 1}])
+      assert {:deny, retry_after} = RateLimit.hit_many([{key, scale, 1}])
+      assert retry_after in 1..scale
+      clean_keys()
+    end
+  end
+
+  # Sleep until just after a whole second, which starts a 500ms window that
+  # ends on a half second, i.e. one that whole-second expiry cuts short
+  defp wait_for_half_second_window do
+    now = System.system_time(:millisecond)
+    :timer.sleep(1000 - rem(now, 1000) + 5)
+  end
+
   describe "inc" do
     test "increments the count for the given key and scale", %{key: key} do
       scale = :timer.seconds(10)

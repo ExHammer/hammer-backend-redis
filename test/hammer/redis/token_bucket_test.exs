@@ -7,8 +7,8 @@ defmodule Hammer.Redis.TokenBucketTest do
     use Hammer, backend: Hammer.Redis, algorithm: :token_bucket
   end
 
-  defmodule RateLimitFixWindow do
-    use Hammer, backend: Hammer.Redis, algorithm: :fix_window
+  defmodule RateLimitSlidingWindow do
+    use Hammer, backend: Hammer.Redis, algorithm: :sliding_window
   end
 
   setup do
@@ -56,7 +56,9 @@ defmodule Hammer.Redis.TokenBucketTest do
       assert {:allow, 1} = RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
       assert {:allow, 0} = RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
 
-      assert {:deny, 1000} = RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
+      assert {:deny, retry_after} = RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
+      # One token refills every 1000ms, less the few ms since the last hit
+      assert retry_after in 900..1000
 
       assert {:deny, _retry_after} =
                RateLimitTokenBucket.hit(key, refill_rate, capacity, 1)
@@ -131,6 +133,14 @@ defmodule Hammer.Redis.TokenBucketTest do
       # 2 from the initial burst + ~50 refilled in 500ms. Whole-second refill
       # allowed only the initial burst.
       assert allowed >= 30
+    end
+
+    test "the deny wait counts time already elapsed towards the next token", %{key: key} do
+      seed(key, 0, redis_now_ms() - 900)
+
+      assert {:deny, retry_after} = RateLimitTokenBucket.hit(key, 1, 10, 1)
+      # 900ms of the 1000ms token period have already passed
+      assert retry_after in 1..100
     end
 
     test "carries the sub-token remainder across hits", %{key: key} do
@@ -220,7 +230,8 @@ defmodule Hammer.Redis.TokenBucketTest do
     test "a single bucket behaves like hit/4", %{key: key} do
       assert {:allow, [1]} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
       assert {:allow, [0]} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
-      assert {:deny, 1000} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
+      assert {:deny, retry_after} = RateLimitTokenBucket.hit_many([{key, 1, 2}])
+      assert retry_after in 900..1000
     end
 
     test "raises on an empty list" do
@@ -241,6 +252,20 @@ defmodule Hammer.Redis.TokenBucketTest do
       end
     end
 
+    test "raises when a cost can never fit in the bucket", %{key: key} do
+      assert_raise ArgumentError, ~r/greater than capacity/, fn ->
+        RateLimitTokenBucket.hit_many([{key, 1, 5, 6}])
+      end
+    end
+
+    test "raises on non-integer or negative numbers", %{key: key} do
+      for bad <- [{key, 1, 5, 1.5}, {key, 0, 5}, {key, 1, -1}, {key, 1, 5, -1}, {key, "1", 5}] do
+        assert_raise ArgumentError, ~r/positive integer refill_rate/, fn ->
+          RateLimitTokenBucket.hit_many([bad])
+        end
+      end
+    end
+
     test "raises on a malformed bucket", %{key: key} do
       assert_raise ArgumentError, ~r/expected \{key, refill_rate, capacity\}/, fn ->
         RateLimitTokenBucket.hit_many([{key, 1}])
@@ -249,7 +274,7 @@ defmodule Hammer.Redis.TokenBucketTest do
 
     test "is only generated for algorithms that support it" do
       assert function_exported?(RateLimitTokenBucket, :hit_many, 1)
-      refute function_exported?(RateLimitFixWindow, :hit_many, 1)
+      refute function_exported?(RateLimitSlidingWindow, :hit_many, 1)
     end
   end
 

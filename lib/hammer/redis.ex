@@ -4,7 +4,7 @@ defmodule Hammer.Redis do
 
   > #### Redis version requirement {: .warning}
   >
-  > Redis 7.0 or later is required. The `:fix_window` algorithm relies on `EXPIREAT ... NX` and
+  > Redis 7.0 or later is required. The `:fix_window` algorithm relies on `PEXPIREAT ... NX` and
   > the `:sliding_window` algorithm relies on `EXPIRETIME`, both introduced in Redis 7.0. On older
   > Redis versions these commands fail, so counter keys never expire and the keyspace grows until
   > Redis runs out of memory.
@@ -34,6 +34,26 @@ defmodule Hammer.Redis do
 
     - `:token_bucket` - Token bucket rate limiting
       Flexible rate limiting with bursting capability. See [Hammer.Redis.TokenBucket](Hammer.Redis.TokenBucket.html) for more details.
+
+  ## Checking several limits at once
+
+  The `:fix_window`, `:leaky_bucket` and `:token_bucket` algorithms also provide
+  `hit_many/1`, which checks several limits in one atomic round trip and counts
+  the hit against all of them only if every one allows it:
+
+      # with algorithm: :fix_window, 1 SMS per minute and 6 per hour
+      {:allow, [_minute_count, _hour_count]} =
+        MyApp.RateLimit.hit_many([
+          {"{user_123}:sms:minute", :timer.minutes(1), 1},
+          {"{user_123}:sms:hour", :timer.hours(1), 6}
+        ])
+
+  On deny it returns `{:deny, retry_after_ms}` and counts nothing. Each
+  algorithm's docs describe its bucket tuple:
+  [FixWindow](Hammer.Redis.FixWindow.html#module-hitting-several-windows-at-once),
+  [TokenBucket](Hammer.Redis.TokenBucket.html#module-hitting-several-buckets-at-once),
+  [LeakyBucket](Hammer.Redis.LeakyBucket.html#module-hitting-several-buckets-at-once).
+  On Redis Cluster, all keys in one call must share a hash tag such as `{user_123}`.
 
   """
   # Redix does not define a type for its start options, so we define our
@@ -156,6 +176,72 @@ defmodule Hammer.Redis do
           @algorithm.get(@name, @prefix, key, scale, @timeout)
         end
       end
+    end
+  end
+
+  @doc false
+  # Validates the buckets given to `hit_many/1` and returns them as
+  # `{redis_key, arg1, arg2, cost}`, with `cost` defaulting to 1. `names` are
+  # the four tuple elements for error messages, e.g.
+  # ~w(key refill_rate capacity cost).
+  #
+  # The numbers are checked here because the scripts only find out a value is
+  # unusable (e.g. INCRBY with 1.5) in their write pass, after other buckets
+  # were already written, which would break the all-or-nothing guarantee.
+  @spec normalize_buckets!(list(), [String.t()], (tuple() -> String.t())) :: [tuple(), ...]
+  def normalize_buckets!(buckets, names, redis_key) do
+    buckets = Enum.map(buckets, &normalize_bucket!(&1, names))
+
+    if buckets == [] do
+      raise ArgumentError, "hit_many/1 expects at least one bucket"
+    end
+
+    buckets =
+      Enum.map(buckets, fn {_, arg1, arg2, cost} = b -> {redis_key.(b), arg1, arg2, cost} end)
+
+    # The scripts read every bucket before writing any, so a key listed twice
+    # would be charged twice against the same stale state. Compare the Redis
+    # keys, since e.g. 1 and "1" interpolate to the same one.
+    keys = Enum.map(buckets, &elem(&1, 0))
+
+    if Enum.uniq(keys) != keys do
+      raise ArgumentError, "hit_many/1 got the same key more than once: #{inspect(keys)}"
+    end
+
+    buckets
+  end
+
+  defp normalize_bucket!({key, arg1, arg2}, names),
+    do: normalize_bucket!({key, arg1, arg2, 1}, names)
+
+  defp normalize_bucket!({_key, arg1, arg2, cost} = bucket, _names)
+       when is_integer(arg1) and arg1 > 0 and is_integer(arg2) and arg2 >= 0 and
+              is_integer(cost) and cost >= 0,
+       do: bucket
+
+  defp normalize_bucket!(other, names) do
+    [_key, arg1, arg2, cost] = names
+
+    raise ArgumentError,
+          "expected {#{Enum.join(Enum.take(names, 3), ", ")}} or " <>
+            "{#{Enum.join(names, ", ")}} with a positive integer #{arg1} and " <>
+            "non-negative integer #{arg2} and #{cost}, got: #{inspect(other)}"
+  end
+
+  @doc false
+  # Runs a `hit_many`-style script over the normalized buckets. The script
+  # replies {1, value_1, ..., value_n} on allow or {0, wait_ms} on deny.
+  @spec eval_many!(Redix.connection(), String.t(), [tuple(), ...], (tuple() -> list()), timeout()) ::
+          {:allow, [non_neg_integer()]} | {:deny, non_neg_integer()}
+  def eval_many!(name, script, buckets, bucket_args, timeout) do
+    keys = Enum.map(buckets, &elem(&1, 0))
+    args = Enum.flat_map(buckets, bucket_args)
+    command = ["EVAL", script, length(keys)] ++ keys ++ args
+
+    case Redix.command(name, command, timeout: timeout) do
+      {:ok, [1 | values]} -> {:allow, values}
+      {:ok, [0, wait]} -> {:deny, wait}
+      {:error, error} -> raise error
     end
   end
 

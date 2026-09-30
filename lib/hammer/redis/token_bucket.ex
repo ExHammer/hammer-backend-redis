@@ -108,7 +108,9 @@ defmodule Hammer.Redis.TokenBucket do
           timeout :: timeout()
         ) :: {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
   def hit(connection_name, prefix, key, refill_rate, capacity, cost, timeout) do
-    case eval(connection_name, prefix, [{key, refill_rate, capacity, cost}], timeout) do
+    bucket = {redis_key(prefix, key), refill_rate, capacity, cost}
+
+    case eval(connection_name, [bucket], timeout) do
       {:allow, [level]} -> {:allow, level}
       {:deny, wait} -> {:deny, wait}
     end
@@ -127,49 +129,28 @@ defmodule Hammer.Redis.TokenBucket do
           timeout :: timeout()
         ) :: {:allow, [non_neg_integer()]} | {:deny, non_neg_integer()}
   def hit_many(connection_name, prefix, buckets, timeout) do
-    buckets = Enum.map(buckets, &normalize_bucket/1)
-
-    if buckets == [] do
-      raise ArgumentError, "hit_many/1 expects at least one bucket"
-    end
-
-    # The script reads every bucket before writing any, so a key listed twice
-    # would be charged twice against the same stale level. Compare the Redis
-    # keys, since e.g. 1 and "1" interpolate to the same one.
-    keys = Enum.map(buckets, fn {key, _, _, _} -> redis_key(prefix, key) end)
-
-    if Enum.uniq(keys) != keys do
-      raise ArgumentError, "hit_many/1 got the same key more than once: #{inspect(keys)}"
-    end
-
-    eval(connection_name, prefix, buckets, timeout)
-  end
-
-  defp normalize_bucket({key, refill_rate, capacity}), do: {key, refill_rate, capacity, 1}
-  defp normalize_bucket({_key, _refill_rate, _capacity, _cost} = bucket), do: bucket
-
-  defp normalize_bucket(other) do
-    raise ArgumentError,
-          "expected {key, refill_rate, capacity} or {key, refill_rate, capacity, cost}, " <>
-            "got: #{inspect(other)}"
-  end
-
-  defp eval(connection_name, prefix, buckets, timeout) do
-    keys = Enum.map(buckets, fn {key, _, _, _} -> redis_key(prefix, key) end)
-
-    args =
-      Enum.flat_map(buckets, fn {_, refill_rate, capacity, cost} ->
-        [capacity, refill_rate, cost]
+    buckets =
+      Hammer.Redis.normalize_buckets!(buckets, ~w(key refill_rate capacity cost), fn {key, _, _,
+                                                                                      _} ->
+        redis_key(prefix, key)
       end)
 
-    command = ["EVAL", redis_script(), length(keys)] ++ keys ++ args
-
-    case Redix.command(connection_name, command, timeout: timeout) do
-      {:ok, [1 | levels]} -> {:allow, levels}
-      {:ok, [0, wait]} -> {:deny, wait}
-      {:error, error} -> raise error
+    # A bucket never holds more than `capacity` tokens, so a larger cost could
+    # never be paid and a caller retrying on the returned wait would spin.
+    for {key, _, capacity, cost} <- buckets, cost > capacity do
+      raise ArgumentError,
+            "hit_many/1 got cost #{cost} greater than capacity #{capacity} for #{key}, " <>
+              "which can never be allowed"
     end
+
+    eval(connection_name, buckets, timeout)
   end
+
+  defp eval(connection_name, buckets, timeout) do
+    Hammer.Redis.eval_many!(connection_name, redis_script(), buckets, &script_args/1, timeout)
+  end
+
+  defp script_args({_, refill_rate, capacity, cost}), do: [capacity, refill_rate, cost]
 
   @compile inline: [redis_key: 2]
   defp redis_key(prefix, key) do
@@ -262,12 +243,22 @@ defmodule Hammer.Redis.TokenBucket do
 
         states[i] = {current_tokens - cost, new_last_update, capacity, refill_rate}
       else
-        -- Time in ms until the bucket holds enough tokens to pay `cost`.
-        -- Integer ceiling division so the wait never rounds down into one
-        -- that is still too short, floored at 1ms.
+        -- Time in ms until the bucket holds enough tokens to pay `cost`,
+        -- counting the time already elapsed towards the next token. Unless
+        -- cost > capacity (which can never be paid), a denied bucket was not
+        -- clamped, so it needs new_tokens + deficit tokens in total since
+        -- last_update. Integer ceiling division, so the wait never rounds down
+        -- into one that is still too short, floored at 1ms.
         local deficit = cost - current_tokens
-        local bucket_wait = math.max(math.floor((deficit * 1000 + refill_rate - 1) / refill_rate), 1)
-        wait = math.max(wait, bucket_wait)
+        local needed = deficit
+        if cost <= capacity then
+          needed = new_tokens + deficit
+        end
+        local ready_at = math.floor((needed * 1000 + refill_rate - 1) / refill_rate)
+        if cost <= capacity then
+          ready_at = ready_at - elapsed
+        end
+        wait = math.max(wait, math.max(ready_at, 1))
       end
     end
 
