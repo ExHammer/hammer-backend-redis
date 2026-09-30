@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 7.3.0 - 2026-09-30
 
 ### Added
 
@@ -11,6 +11,10 @@
 
 - Fixed window sets counter expiry with `PEXPIREAT` (milliseconds) instead of `EXPIREAT` (whole seconds). A window that doesn't end on a whole second, i.e. any `scale` that isn't a multiple of 1000ms, expired early or immediately, so its limit was not enforced (#165)
 - Token bucket and leaky bucket deny waits count the time already elapsed towards the next token or leak, instead of overstating the wait by up to one full period (#165)
+
+### Changed
+
+- Bump `redix` to 1.9.2 (#161)
 
 ## 7.2.1 - 2026-09-23
 
