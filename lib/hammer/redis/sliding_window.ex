@@ -64,47 +64,27 @@ defmodule Hammer.Redis.SlidingWindow do
       # Allow 10 requests in any 1 second window
       MyApp.RateLimit.hit("user_123", 1000, 10)
 
-  ## Redis version requirement
+  ## Storage
 
-  This algorithm relies on the `EXPIRETIME` command, which requires Redis 7.0 or later.
+  Each key is a sorted set of the requests in its window, scored by their
+  timestamp in seconds with millisecond precision. `hit/4`, `inc/3`, `set/3`
+  and `get/2` all read and write the same set, and use the Redis server clock.
   """
   @doc false
   @spec hit(
           Redix.connection(),
           String.t(),
           String.t(),
-          non_neg_integer(),
+          pos_integer(),
           non_neg_integer(),
           non_neg_integer(),
           timeout()
         ) ::
           {:allow, non_neg_integer()} | {:deny, non_neg_integer()}
-  def hit(connection_name, prefix, key, window_ms, limit, increment, timeout) do
-    full_key = redis_key(prefix, key, window_ms)
-    window_seconds = div(window_ms, 1000)
-
-    [allowed, value] =
-      case Redix.command(
-             connection_name,
-             [
-               "EVAL",
-               redis_script(:hit),
-               "1",
-               full_key,
-               window_seconds,
-               limit,
-               increment
-             ],
-             timeout: timeout
-           ) do
-        {:ok, reply} -> reply
-        {:error, error} -> raise error
-      end
-
-    if allowed == 1 do
-      {:allow, value}
-    else
-      {:deny, value * 1000}
+  def hit(name, prefix, key, scale, limit, increment, timeout) do
+    case eval(name, prefix, key, scale, ["hit", limit, increment], timeout) do
+      [1, count] -> {:allow, count}
+      [0, wait] -> {:deny, wait}
     end
   end
 
@@ -113,32 +93,12 @@ defmodule Hammer.Redis.SlidingWindow do
           Redix.connection(),
           String.t(),
           String.t(),
-          non_neg_integer(),
+          pos_integer(),
           non_neg_integer(),
           timeout()
         ) :: non_neg_integer()
   def inc(name, prefix, key, scale, increment, timeout) do
-    now_ms = now_ms()
-    window_ms = div(now_ms, scale)
-    full_key = redis_key(prefix, key, window_ms)
-    window_seconds = div(window_ms, 1000)
-
-    new_members =
-      Enum.map(1..increment, fn index ->
-        now_microseconds = System.system_time(:microsecond)
-        now_seconds = div(now_microseconds, 1_000_000)
-        [to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
-      end)
-
-    commands = [
-      List.flatten(["ZADD", full_key] ++ new_members),
-      ["EXPIRE", full_key, window_seconds],
-      ["ZCARD", full_key]
-    ]
-
-    name
-    |> Hammer.Redis.pipeline!(commands, timeout)
-    |> List.last()
+    eval(name, prefix, key, scale, ["inc", 0, increment], timeout)
   end
 
   @doc false
@@ -146,33 +106,12 @@ defmodule Hammer.Redis.SlidingWindow do
           Redix.connection(),
           String.t(),
           String.t(),
-          non_neg_integer(),
+          pos_integer(),
           non_neg_integer(),
           timeout()
         ) :: non_neg_integer()
-  def set(name, prefix, key, scale, increment, timeout) do
-    now_ms = now_ms()
-    window_ms = div(now_ms, scale)
-    full_key = redis_key(prefix, key, window_ms)
-    window_seconds = div(window_ms, 1000)
-
-    new_members =
-      Enum.map(1..increment, fn index ->
-        now_microseconds = System.system_time(:microsecond)
-        now_seconds = div(now_microseconds, 1_000_000)
-        [to_string(now_seconds), to_string(now_microseconds) <> to_string(index)]
-      end)
-
-    commands = [
-      ["ZREMRANGEBYSCORE", full_key, "0", "+inf"],
-      List.flatten(["ZADD", full_key] ++ new_members),
-      ["EXPIRE", full_key, window_seconds],
-      ["ZCARD", full_key]
-    ]
-
-    name
-    |> Hammer.Redis.pipeline!(commands, timeout)
-    |> List.last()
+  def set(name, prefix, key, scale, count, timeout) do
+    eval(name, prefix, key, scale, ["set", 0, count], timeout)
   end
 
   @doc false
@@ -180,53 +119,96 @@ defmodule Hammer.Redis.SlidingWindow do
           Redix.connection(),
           String.t(),
           String.t(),
-          non_neg_integer(),
+          pos_integer(),
           timeout()
         ) :: non_neg_integer()
   def get(name, prefix, key, scale, timeout) do
-    now = now_ms()
-    window = div(now, scale)
-    full_key = redis_key(prefix, key, window)
-    count = Redix.command!(name, ["ZCARD", full_key], timeout: timeout)
-
-    count || 0
+    eval(name, prefix, key, scale, ["get", 0, 0], timeout)
   end
 
+  defp eval(name, prefix, key, scale, [mode, limit, amount], timeout) do
+    command = [
+      "EVAL",
+      redis_script(),
+      "1",
+      redis_key(prefix, key, scale),
+      mode,
+      scale,
+      limit,
+      amount
+    ]
+
+    case Redix.command(name, command, timeout: timeout) do
+      {:ok, reply} -> reply
+      {:error, error} -> raise error
+    end
+  end
+
+  # One set per key and scale, shared by hit/inc/set/get. The window slides,
+  # so the key must not change over time.
   @compile inline: [redis_key: 3]
-  defp redis_key(prefix, key, window) do
-    "#{prefix}:#{key}:#{window}"
+  defp redis_key(prefix, key, scale) do
+    "#{prefix}:#{key}:#{scale}"
   end
 
-  @compile inline: [now_ms: 0]
-  defp now_ms do
-    System.system_time(:millisecond)
-  end
-
-  defp redis_script(:hit) do
+  # KEYS[1] is the set; ARGV is mode ("hit", "inc", "set" or "get"), the
+  # window in ms, the limit (hit only) and the amount (increment or count).
+  #
+  # Scores are seconds with a millisecond fraction, so entries written by
+  # earlier versions (whole seconds) are still counted and trimmed correctly.
+  defp redis_script do
     """
     local key = KEYS[1]
-    local window = tonumber(ARGV[1])
-    local max_requests = tonumber(ARGV[2])
-    local increment = tonumber(ARGV[3])
+    local mode = ARGV[1]
+    local window_ms = tonumber(ARGV[2])
+    local limit = tonumber(ARGV[3])
+    local amount = tonumber(ARGV[4])
 
-    local current_time = redis.call("TIME")
-    local trim_time = tonumber(current_time[1]) - window
-    redis.call("ZREMRANGEBYSCORE", key, 0, trim_time)
-    local request_count = redis.call("ZCARD", key) or 0
-    request_count = tonumber(request_count)
+    local time = redis.call("TIME")
+    local now_ms = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+    -- An entry is in the window while its score is > threshold
+    local threshold = string.format("%.3f", (now_ms - window_ms) / 1000)
 
-    if (request_count + increment) <= max_requests then
-      for i = 1,increment,1
-      do
-        redis.call("ZADD", key, current_time[1], current_time[1] .. current_time[2] .. i)
-      end
-
-      redis.call("EXPIRE", key, window)
-      return {1, request_count + increment} -- Allow with requests
-    else
-      local expire_time = redis.call("EXPIRETIME", key)
-      return {0, expire_time - tonumber(current_time[1])} -- Deny with ms wait time
+    if mode == "get" then
+      return redis.call("ZCOUNT", key, "(" .. threshold, "+inf")
     end
+
+    redis.call("ZREMRANGEBYSCORE", key, "-inf", threshold)
+    local count = redis.call("ZCARD", key)
+
+    if mode == "set" then
+      redis.call("DEL", key)
+      count = 0
+    end
+
+    if mode == "hit" and count + amount > limit then
+      -- Deny with the time until enough of the oldest entries leave the
+      -- window for this hit to fit: the (count + amount - limit)-th oldest.
+      -- A hit larger than the limit never fits; answer with a full window.
+      local needed = count + amount - limit
+      if needed > count then
+        return {0, window_ms}
+      end
+      local entry = redis.call("ZRANGE", key, needed - 1, needed - 1, "WITHSCORES")
+      local entry_ms = math.floor(tonumber(entry[2]) * 1000 + 0.5)
+      return {0, math.max(entry_ms + window_ms - now_ms, 1)}
+    end
+
+    -- Members only need to be unique. Two calls in the same microsecond see
+    -- different counts, since entries from that instant can't be trimmed yet.
+    local score = string.format("%.3f", now_ms / 1000)
+    for i = 1, amount do
+      redis.call("ZADD", key, score, time[1] .. time[2] .. "-" .. count .. "-" .. i)
+    end
+
+    if amount > 0 then
+      redis.call("PEXPIRE", key, window_ms)
+    end
+
+    if mode == "hit" then
+      return {1, count + amount}
+    end
+    return count + amount
     """
   end
 end

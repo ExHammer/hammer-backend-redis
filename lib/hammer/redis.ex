@@ -4,10 +4,9 @@ defmodule Hammer.Redis do
 
   > #### Redis version requirement {: .warning}
   >
-  > Redis 7.0 or later is required. The `:fix_window` algorithm relies on `PEXPIREAT ... NX` and
-  > the `:sliding_window` algorithm relies on `EXPIRETIME`, both introduced in Redis 7.0. On older
-  > Redis versions these commands fail, so counter keys never expire and the keyspace grows until
-  > Redis runs out of memory.
+  > Redis 7.0 or later is required. The `:fix_window` algorithm relies on `PEXPIREAT ... NX`,
+  > introduced in Redis 7.0. On older Redis versions the command fails, so counter keys never
+  > expire and the keyspace grows until Redis runs out of memory.
 
       defmodule MyApp.RateLimit do
         # the default prefix is "MyApp.RateLimit:"

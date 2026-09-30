@@ -16,12 +16,10 @@ In other sources it's sometimes called a "fixed window counter".
 ## Requirements
 
 **Redis 7.0 or later is required.** The fixed window algorithm relies on the `NX` option of
-[`PEXPIREAT`](https://redis.io/docs/latest/commands/pexpireat/) and the sliding window algorithm
-relies on [`EXPIRETIME`](https://redis.io/docs/latest/commands/expiretime/), both of which were
-introduced in Redis 7.0.
+[`PEXPIREAT`](https://redis.io/docs/latest/commands/pexpireat/), which was introduced in Redis 7.0.
 
-On older Redis versions (which are [end-of-life](https://endoflife.date/redis)), these commands
-fail, so counter keys never receive a TTL and are never cleaned up. Rate limiting appears to work
+On older Redis versions (which are [end-of-life](https://endoflife.date/redis)), this command
+fails, so counter keys never receive a TTL and are never cleaned up. Rate limiting appears to work
 correctly, but the keyspace grows unbounded until Redis runs out of memory.
 
 ## Installation
