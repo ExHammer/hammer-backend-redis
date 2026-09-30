@@ -151,10 +151,18 @@ defmodule Hammer.Redis.SlidingWindowTest do
       increment = 2
 
       assert {:allow, 2} == RateLimit.hit(key, scale, limit, increment)
+      # Space the hits so the wait only frees the first one
+      :timer.sleep(300)
       assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
       assert {:deny, wait} = RateLimit.hit(key, scale, limit, increment)
 
       :timer.sleep(wait)
+
+      # The first hit left the window; the second is still in it
+      assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
+      assert {:deny, _wait} = RateLimit.hit(key, scale, limit, increment)
+
+      :timer.sleep(scale)
 
       assert {:allow, 2} == RateLimit.hit(key, scale, limit, increment)
       assert {:allow, 4} == RateLimit.hit(key, scale, limit, increment)
